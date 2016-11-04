@@ -1,6 +1,8 @@
 # clj-starbuck
 
-A Clojure library designed to ... well, that part is up to you.
+A Clojure library that lets you decouple the modules in your application.
+
+[![Clojars Project](https://img.shields.io/clojars/v/clj-starbuck.svg)](https://clojars.org/clj-starbuck)
 
 ## Usage
 

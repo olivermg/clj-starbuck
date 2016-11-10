@@ -89,22 +89,22 @@
                                                             `(~next-comp ~reqsym)
                                                             next-comp)))))))
 
-(defmacro on [key next-comp & {:keys [abort-route?]}]
+(defmacro on [key next-comp & {:keys [abort?]}]
   (let [rname (concat-symbols "on" *route* key)
         logmsg (str "On " key " -> " next-comp
-                    " (route " *route* ", abort-route? " abort-route? ")")
+                    " (route " *route* ", abort? " abort? ")")
         reqsym (gensym "?req-")
         keysym (symbol (name key))]
     `(defrule ~rname
        [~reqsym ~'<- PendingMessage [{:keys [~'route ~keysym]}]
         ~@(when *route* `[(= ~*route* ~'route)]) (not (nil? ~keysym))]
-       ~@(when (not abort-route?)
+       ~@(when (not abort?)
            `[[:not ~(if *route*
                       `[Abort (or (nil? ~'route) (= ~*route* ~'route))]
-                      `[Abort])]])
+                      `[Abort (nil? ~'route)])]])
        ~'=>
        (debug ~logmsg)
-       ~@(when abort-route?
+       ~@(when abort?
            `[(insert! (->Abort ~*route*))])
        (insert! (map->RoutedMessage (assoc ~reqsym :comp ~next-comp))))))
 

@@ -29,8 +29,9 @@
       (warn "ERROR in component:" (pr-str e))
       (merge req {:error e}))))
 
-(defmacro defcomponentrecord [name]
-  (let [stopkw (keyword (str *ns*) "stop")]
+(defmacro defcomponentrecord [name & {:keys [silent]}]
+  (let [stopkw (keyword (str *ns*) "stop")
+        fres (gensym "fres-")]
     `(defrecord ~name [~'processfn ~'ch-in ~'ch-out     ;; constructor-initialized fields
                        ]                                ;; start/stop-initialized fields
 
@@ -41,12 +42,13 @@
          (go-loop [req# (<! ~'ch-in)]
            (if-not (= req# ~stopkw)
              (do (debug "got request")
-                 (let [res# (safe-process this# ~'processfn req#)]
-                   (debug "sending response(s)")
-                   (cond
-                     (nil? res#)        nil
-                     (sequential? res#) (dorun (map #(put! ~'ch-out %) res#))
-                     true               (put! ~'ch-out res#)))
+                 (let [~fres (future (safe-process this# ~'processfn req#))]
+                   ~@(when (not silent)
+                       `[(debug "sending response(s)")
+                         (cond
+                           (nil? @~fres)        nil
+                           (sequential? @~fres) (dorun (map #(put! ~'ch-out %) @~fres))
+                           true                 (put! ~'ch-out @~fres))]))
                  (recur (<! ~'ch-in)))
              (info "stopped.")))
          (info "started.")

@@ -45,7 +45,7 @@
 
 (defrecord PendingMessage [route comp])
 (defrecord RoutedMessage [route comp])
-(defrecord AbortRoute [route])
+(defrecord Abort [route])
 
 (defn- concat-symbols [prefix & syms]
   (letfn [(sym-to-str [s]
@@ -82,7 +82,7 @@
         ]
     `(defrule ~rname
        [~reqsym ~'<- PendingMessage (= ~*route* ~'route) (contains? ~prev-comps ~'comp)]
-       [:not [AbortRoute (or (nil? ~'route) (= ~*route* ~'route))]]
+       [:not [Abort (or (nil? ~'route) (= ~*route* ~'route))]]
        ~'=>
        (debug ~logmsg)
        (insert! (map->RoutedMessage (assoc ~reqsym :comp ~(if (fn? next-comp)
@@ -96,11 +96,16 @@
         reqsym (gensym "?req-")
         keysym (symbol (name key))]
     `(defrule ~rname
-       [~reqsym ~'<- PendingMessage [{:keys [~'route ~keysym]}] ~@(when *route* `[(= ~*route* ~'route)]) (not (nil? ~keysym))]
+       [~reqsym ~'<- PendingMessage [{:keys [~'route ~keysym]}]
+        ~@(when *route* `[(= ~*route* ~'route)]) (not (nil? ~keysym))]
+       ~@(when (not abort-route?)
+           `[[:not ~(if *route*
+                      `[Abort (or (nil? ~'route) (= ~*route* ~'route))]
+                      `[Abort])]])
        ~'=>
        (debug ~logmsg)
        ~@(when abort-route?
-           `[(insert! (->AbortRoute ~*route*))])
+           `[(insert! (->Abort ~*route*))])
        (insert! (map->RoutedMessage (assoc ~reqsym :comp ~next-comp))))))
 
 (defn process [this req]

@@ -29,30 +29,34 @@
       (warn "ERROR in component:" (pr-str e))
       (merge req {:error e}))))
 
-(defmacro defcomponentrecord [name & {:keys [silent]}]
+(defmacro defcomponentrecord [name & {:keys [silent?]}]
+  "Defines a component."
   (let [stopkw (keyword (str *ns*) "stop")
-        fres (gensym "fres-")]
+        this (gensym "this-")
+        req (gensym "req-")]
     `(defrecord ~name [~'processfn ~'ch-in ~'ch-out     ;; constructor-initialized fields
                        ]                                ;; start/stop-initialized fields
 
        c/Lifecycle
 
-       (start [this#]
+       (start [~this]
          (info "starting...")
-         (go-loop [req# (<! ~'ch-in)]
-           (if-not (= req# ~stopkw)
+         (go-loop [~req (<! ~'ch-in)]
+           (if-not (= ~req ~stopkw)
              (do (debug "got request")
-                 (let [~fres (future (safe-process this# ~'processfn req#))]
-                   ~@(when (not silent)
-                       `[(debug "sending response(s)")
-                         (cond
-                           (nil? @~fres)        nil
-                           (sequential? @~fres) (dorun (map #(put! ~'ch-out %) @~fres))
-                           true                 (put! ~'ch-out @~fres))]))
+                 ~(if silent?
+                    `(do (debug "silent component - will not wait for response(s)")
+                         (future (safe-process ~this ~'processfn ~req)))
+                    `(let [res# (safe-process ~this ~'processfn ~req)]
+                       (debug "sending response(s)")
+                       (cond
+                         (nil? res#)        nil
+                         (sequential? res#) (dorun (map #(put! ~'ch-out %) res#))
+                         true               (put! ~'ch-out res#))))
                  (recur (<! ~'ch-in)))
              (info "stopped.")))
          (info "started.")
-         this#)
+         ~this)
 
        (stop [this#]
          (info "stopping...")

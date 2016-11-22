@@ -20,13 +20,9 @@ which will result in the data being delivered to the next component. And so on.
 
 * Queues are very static. You sometimes want to be flexible in where to route your data next, i.e.
   dynamic routing.
-
 * An application can have many routes.
-
 * Components may be part of multiple routes.
-
 * Components must not know anything about who its neighbours in its route are.
-
 * That means we need some other mechanism to decided where to route to.
 
 ## Usage
@@ -38,8 +34,8 @@ This library assumes that you're using:
 This library itself is based on:
 
 * core.async
-
 * component
+* clara.rules
 
 ## Example
 

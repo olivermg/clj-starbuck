@@ -43,16 +43,17 @@
          (info "starting...")
          (go-loop [~req (<! ~'ch-in)]
            (if-not (= ~req ~stopkw)
-             (do (debug "got request")
-                 ~(if silent?
-                    `(do (debug "silent component - will not wait for response(s)")
-                         (future (safe-process ~this ~'processfn ~req)))
-                    `(let [res# (safe-process ~this ~'processfn ~req)]
-                       (debug "sending response(s)")
-                       (cond
-                         (nil? res#)        nil
-                         (sequential? res#) (dorun (map #(put! ~'ch-out %) res#))
-                         true               (put! ~'ch-out res#))))
+             (do (future
+                   (debug "got request")
+                   ~(if silent?
+                      `(do (debug "silent component - will ignore response(s)")
+                           (safe-process ~this ~'processfn ~req))
+                      `(let [res# (safe-process ~this ~'processfn ~req)]
+                         (debug "sending response(s)")
+                         (cond
+                           (nil? res#)        nil
+                           (sequential? res#) (dorun (map #(put! ~'ch-out %) res#))
+                           true               (put! ~'ch-out res#)))))
                  (recur (<! ~'ch-in)))
              (info "stopped.")))
          (info "started.")

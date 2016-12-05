@@ -14,7 +14,7 @@
 ;;; limitations under the License.
 ;;;
 
-(defproject clj-starbuck "0.1.2"
+(defproject clj-starbuck "0.1.3"
   :description "Decouple your application's modules"
   :url "http://github.com/olivermg/clj-starbuck"
   :license {:name "Apache License, Version 2.0"

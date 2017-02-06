@@ -108,9 +108,27 @@
            `[(insert! (->Abort ~*route*))])
        (insert! (map->RoutedMessage (assoc ~reqsym :comp ~next-comp))))))
 
+(defmacro postprocess [prev-comps f]
+  {:pre [(not (nil? *route*))]}
+  (let [rname (concat-symbols "postprocess" *route* prev-comps)
+        logmsg (str "Postprocess after " prev-comps " (route " *route* ")")
+        reqsym (gensym "?req-")
+        prev-comps (set (if (sequential? prev-comps)
+                          prev-comps
+                          [prev-comps]))]
+    `(defrule ~rname
+       [~reqsym ~'<- PendingMessage [{~'postprocessed? ::postprocessed?
+                                      ~'route :route
+                                      ~'comp :comp}]
+        (= ~*route* ~'route) (contains? ~prev-comps ~'comp) (not ~'postprocessed?)]
+       [:not [Abort (or (nil? ~'route) (= ~*route* ~'route))]]
+       ~'=>
+       (debug ~logmsg)
+       (insert! (map->PendingMessage (assoc (~f ~reqsym) ::postprocessed? true))))))
+
 (defn process [this req]
   (let [rns (:rulens this)]
-    (map #(into {} (:?req %)) ;; into is necessary here, as records don't implement IFn
+    (map #(into {} (-> % :?req (dissoc ::postprocessed?))) ;; into is necessary here, as records don't implement IFn
          (-> (mk-session rns)
              (insert (map->PendingMessage req))
              (fire-rules)

@@ -29,17 +29,18 @@
       (warn "ERROR in component:" (pr-str e))
       (merge req {:error e}))))
 
-(defmacro defcomponentrecord [name & {:keys [silent?]}]
+(defmacro defcomponentrecord [name & {:keys [silent? startfn stopfn]}]
   "Defines a component."
   (let [stopkw (keyword (str *ns*) "stop")
-        this (gensym "this-")
+        this1 (gensym "this-")
+        this2 (gensym "this-")
         req (gensym "req-")]
     `(defrecord ~name [~'processfn ~'ch-in ~'ch-out     ;; constructor-initialized fields
                        ]                                ;; start/stop-initialized fields
 
        c/Lifecycle
 
-       (start [~this]
+       (start [~this1]
          (info "starting...")
          (go-loop [~req (<! ~'ch-in)]
            (if-not (= ~req ~stopkw)
@@ -47,8 +48,8 @@
                    (debug "got request")
                    ~(if silent?
                       `(do (debug "silent component - will ignore response(s)")
-                           (safe-process ~this ~'processfn ~req))
-                      `(let [res# (safe-process ~this ~'processfn ~req)]
+                           (safe-process ~this1 ~'processfn ~req))
+                      `(let [res# (safe-process ~this1 ~'processfn ~req)]
                          (debug "sending response(s)")
                          (cond
                            (nil? res#)        nil
@@ -56,11 +57,17 @@
                            true               (put! ~'ch-out res#)))))
                  (recur (<! ~'ch-in)))
              (info "stopped.")))
-         (info "started.")
-         ~this)
+         (let [~this1 ~(if startfn
+                         `(~startfn ~this1)
+                         this1)]
+           (info "started.")
+           ~this1))
 
-       (stop [this#]
+       (stop [~this2]
          (info "stopping...")
-         (put! ~'ch-in ~stopkw)
-         (info "stopped.")
-         this#))))
+         (let [~this2 ~(if stopfn
+                         `(~stopfn ~this2)
+                         this2)]
+           (put! ~'ch-in ~stopkw)
+           (info "stopped.")
+           ~this2)))))

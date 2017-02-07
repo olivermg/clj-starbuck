@@ -20,7 +20,7 @@
             [taoensso.timbre :refer [trace debug info warn error fatal]]))
 
 (defprotocol MessageRouting
-  (route [this req]))
+  (dispatch [this req]))
 
 (defn safe-process [this f req & args]
   (try
@@ -43,7 +43,7 @@
 
        MessageRouting
 
-       (route [this# req#]
+       (dispatch [this# req#]
          (debug "routing message...")
          (put! ~'ch-out req#))
 
@@ -62,8 +62,8 @@
                          (debug "sending response(s)")
                          (cond
                            (nil? res#)        nil
-                           (sequential? res#) (dorun (map #(route ~this1 %) res#))
-                           true               (route ~this1 res#)))))
+                           (sequential? res#) (dorun (map #(dispatch ~this1 %) res#))
+                           true               (dispatch ~this1 res#)))))
                  (recur (<! ~'ch-in)))
              (info "stopped.")))
          (let [~this1 ~(if startfn

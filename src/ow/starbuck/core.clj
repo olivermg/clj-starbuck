@@ -19,6 +19,9 @@
             [clojure.core.async :refer [put! >! >!! <! <!! go go-loop pub sub chan close! timeout alts!! promise-chan]]
             [taoensso.timbre :refer [trace debug info warn error fatal]]))
 
+(defprotocol MessageRouting
+  (pass-on [this req]))
+
 (defn safe-process [this f req & args]
   (try
     (apply f this req args)
@@ -38,6 +41,12 @@
     `(defrecord ~name [~'processfn ~'ch-in ~'ch-out     ;; constructor-initialized fields
                        ]                                ;; start/stop-initialized fields
 
+       MessageRouting
+
+       (pass-on [this# req#]
+         (debug "routing message...")
+         (put! ~'ch-out req#))
+
        c/Lifecycle
 
        (start [~this1]
@@ -53,8 +62,8 @@
                          (debug "sending response(s)")
                          (cond
                            (nil? res#)        nil
-                           (sequential? res#) (dorun (map #(put! ~'ch-out %) res#))
-                           true               (put! ~'ch-out res#)))))
+                           (sequential? res#) (dorun (map #(pass-on ~this1 %) res#))
+                           true               (pass-on ~this1 res#)))))
                  (recur (<! ~'ch-in)))
              (info "stopped.")))
          (let [~this1 ~(if startfn

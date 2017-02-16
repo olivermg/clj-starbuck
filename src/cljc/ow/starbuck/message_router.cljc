@@ -1,42 +1,120 @@
 (ns ow.starbuck.message-router
-  (:refer-clojure :rename {compile compile-clj})
+  #_(:refer-clojure :rename {compile compile-clj})
   #_#?(:cljs (:require-macros [cljs.core.async.macros :refer [go go-loop]]))
   (:require #_[com.stuartsierra.component :as c]
             #_#?(:clj  [clojure.core.async :refer [put! >! <! go go-loop pub sub chan close! timeout alts! promise-chan]]
                :cljs [cljs.core.async :refer [put! >! <! pub sub chan close! timeout alts! promise-chan]])
             [taoensso.timbre :refer [trace debug info warn error fatal]]
-            [clara.rules :as cr]
+            ;;;[clara.rules :as cr]
 
             ;;;[clojure.walk :refer [macroexpand-all]]
-            [clojure.string :as str]
-            ;;;[ow.starbuck.core :refer [defcomponentrecord] :as oc]
+            ;;;[clojure.string :as str]
+            [ow.starbuck.core :refer [defcomponentrecord] :as oc]
             ))
 
 ;;;
-;;; EXAMPLE CONFIG:
+;;; EXAMPLE RULESET:
 ;;;
-(comment {:routes [{:id :switch-booking
+(def example-ruleset
+  {:routes {:switch-booking
 
-                    :transitions {nil {:next :database-reader}
+            {:transitions {nil {:next :database-reader}
 
-                                  :database-reader {:next (fn [req] :augmenter)
-                                                    :postprocess (fn [req] (assoc req :postprocessed true))}
+                           :database-reader {:next (fn [req] :converter)
+                                             :postprocess (fn [req] (assoc req :postprocessed true))}
 
-                                  :converter {:preprocess (fn [req] (assoc req :preprocessed true))
-                                              :next [:logger :http-server]}
+                           :converter {:preprocess (fn [req] (assoc req :preprocessed true))
+                                       :next [:logger :http-server]}
 
-                                  :logger {:handle (fn [req] (println "LOG REQ"))}}
+                           :logger {:next (fn [req] (println "HANDLING LOG REQ") nil)}}
 
-                    :event-handlers {:error {:next :http-server
-                                             :abort? true}}}]
+             :event-handlers {:error {:next :http-server
+                                      :abort? true}}}}
 
-          :event-handlers {:pending-mails {:next :mailer}}})
+   :event-handlers {:pending-mails {:next :mailer}}})
 
-(defn compile [cfg]
+#_(defn compile [cfg]
   "Takes a config and compiles it into a ruleset."
   (let [ns (create-ns (gensym "message-router-ruleset-"))]
     ))
 
-(defn advance [ruleset msg]
+(defn- doprocess [type transition msgs]
+  (if-let [f (get transition type)]
+    (map f msgs)
+    msgs))
+
+(def preprocess (partial doprocess :preprocess))
+(def postprocess (partial doprocess :postprocess))
+
+(defn- goto-next [transition msgs]
+  (if-let [next (or (and (map? transition) (:next transition))
+                    (and (keyword? transition) transition))]
+    (let [nexts (if (sequential? next)
+                  next
+                  [next])
+          nextfs (map #(if (fn? %)
+                         (fn [msg] (% msg))
+                         (constantly %))
+                      nexts)]
+      (->> (map #(map (fn [nextf]
+                        (assoc % :comp (nextf %)))
+                      nextfs)
+                msgs)
+           (apply concat)
+           (remove #(nil? (:comp %)))))
+    (throw (ex-info "next component undefined in transition" {:transition transition}))))
+
+(defn- handle-events [eventhandlers msg]
+  (let [{:keys [msg evmsgs]}
+        (reduce (fn [s [key eventhandler]]
+                  (if-let [next (:next eventhandler)]
+                    (if (contains? msg key)
+                      (let [evmsg (assoc msg :comp next)]
+                        (if (:abort? eventhandler)
+                          (-> (dissoc s :msg)
+                              (update :evmsgs #(conj % evmsg)))
+                          (update s :evmsgs #(conj % evmsg))))
+                      s)
+                    (throw (ex-info "next component undefined in eventhandler" {:eventhandler eventhandler}))))
+                {:msg msg
+                 :evmsgs []}
+                eventhandlers)]
+    (if msg
+      (conj evmsgs msg)
+      evmsgs)))
+
+(defn- handle-events-multi [eventhandlers msgs]
+  (->> (map #(handle-events eventhandlers %) msgs)
+       (apply concat)))
+
+(defn advance [msg ruleset]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
-  )
+  (debug "routing starting with" (select-keys msg #{:route :comp :starbuck/route-count}))
+  (if (< (or (:starbuck/route-count msg) 0) 10)
+    (let [route (get-in ruleset [:routes (:route msg)])
+          trans (get-in route [:transitions (:comp msg)])
+          evenths (merge (get ruleset :event-handlers)
+                         (get route :event-handlers))
+          f (comp (partial handle-events-multi evenths)
+                  (partial postprocess trans)
+                  (partial goto-next trans)
+                  (partial preprocess trans))
+          res (->> (f [msg])
+                   (map #(update % :starbuck/route-count (fn [n] (inc (or n 0))))))]
+      (debug "routing ending with" (mapv #(select-keys % #{:route :comp :starbuck/route-count}) res))
+      res)
+    (do (warn "dropping message due to high route-count")
+        [])))
+
+
+
+(defn- process [this req]
+  (advance req (:ruleset this)))
+
+(defcomponentrecord MessageRouter)
+
+(defn new-comp [ch-in ch-out ruleset]
+  (map->MessageRouter {:processfn process
+                       :ch-in ch-in
+                       :ch-out ch-out
+                       :ruleset ruleset}))

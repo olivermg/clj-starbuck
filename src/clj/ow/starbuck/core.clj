@@ -23,14 +23,17 @@
   (dispatch [this req]))
 
 (defn safe-process [this f req & args]
-  (try
-    (apply f this req args)
-    (catch Exception e
-      (warn "EXCEPTION in component:" (pr-str e))
-      (merge req {:error e}))
-    (catch Error e
-      (warn "ERROR in component:" (pr-str e))
-      (merge req {:error e}))))
+  (letfn [(errorify [req err]
+            (-> (merge req {:error err})
+                (update :starbuck/route-count #(inc (or % 0)))))]
+    (try
+      (apply f this req args)
+      (catch Exception e
+        (warn "EXCEPTION in component:" (pr-str e))
+        (errorify req e))
+      (catch Error e
+        (warn "ERROR in component:" (pr-str e))
+        (errorify req e)))))
 
 (defmacro defcomponentrecord [name & {:keys [silent? startfn stopfn]}]
   "Defines a component."

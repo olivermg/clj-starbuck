@@ -14,7 +14,7 @@
 ;;; limitations under the License.
 ;;;
 
-(ns ow.starbuck.message-router
+(ns ow.starbuck.message-routerx
   (:require [com.stuartsierra.component :as c]
             [clojure.core.async :refer [put! >! >!! <! <!! go go-loop pub sub chan close! timeout alts!! alts! promise-chan]]
             [taoensso.timbre :refer [trace debug info warn error fatal]]

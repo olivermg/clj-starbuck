@@ -135,10 +135,10 @@
              (query @(ns-resolve rns 'get-routed-messages))
              ))))
 
-(defcomponentrecord MessageRouter)
+(defcomponentrecord MessageRouterX)
 
 (defn new-comp [ch-in ch-out rulens]
-  (map->MessageRouter {:processfn process
+  (map->MessageRouterX {:processfn process
                        :ch-in ch-in
                        :ch-out ch-out
                        :rulens rulens}))

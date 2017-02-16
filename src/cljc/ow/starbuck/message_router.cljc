@@ -1,10 +1,5 @@
 (ns ow.starbuck.message-router
-  #_(:refer-clojure :rename {compile compile-clj})
-  #_#?(:cljs (:require-macros [cljs.core.async.macros :refer [go go-loop]]))
-  (:require #_[com.stuartsierra.component :as c]
-            #_#?(:clj  [clojure.core.async :refer [put! >! <! go go-loop pub sub chan close! timeout alts! promise-chan]]
-               :cljs [cljs.core.async :refer [put! >! <! pub sub chan close! timeout alts! promise-chan]])
-            [taoensso.timbre :refer [trace debug info warn error fatal]]
+  (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
             ;;;[clara.rules :as cr]
 
             ;;;[clojure.walk :refer [macroexpand-all]]
@@ -48,7 +43,7 @@
 
 (defn- goto-next [transition msgs]
   (if-let [next (or (and (map? transition) (:next transition))
-                    (and (keyword? transition) transition))]
+                    transition)]
     (let [nexts (if (sequential? next)
                   next
                   [next])
@@ -62,7 +57,7 @@
                 msgs)
            (apply concat)
            (remove #(nil? (:comp %)))))
-    (throw (ex-info "next component undefined in transition" {:transition transition}))))
+    (warn "next component undefined in transition" {:transition transition})))
 
 (defn- handle-events [eventhandlers msg]
   (let [{:keys [msg evmsgs]}
@@ -75,7 +70,7 @@
                               (update :evmsgs #(conj % evmsg)))
                           (update s :evmsgs #(conj % evmsg))))
                       s)
-                    (throw (ex-info "next component undefined in eventhandler" {:eventhandler eventhandler}))))
+                    (warn "next component undefined in eventhandler" {:eventhandler eventhandler})))
                 {:msg msg
                  :evmsgs []}
                 eventhandlers)]
@@ -90,7 +85,7 @@
 (defn advance [msg ruleset]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
   (debug "routing starting with" (select-keys msg #{:route :comp :starbuck/route-count}))
-  (if (< (or (:starbuck/route-count msg) 0) 10)
+  (if (< (or (:starbuck/route-count msg) 0) 100)
     (let [route (get-in ruleset [:routes (:route msg)])
           trans (get-in route [:transitions (:comp msg)])
           evenths (merge (get ruleset :event-handlers)

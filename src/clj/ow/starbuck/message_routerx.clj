@@ -14,7 +14,7 @@
 ;;; limitations under the License.
 ;;;
 
-(ns ow.starbuck.message-router
+(ns ow.starbuck.message-routerx
   (:require [com.stuartsierra.component :as c]
             [clojure.core.async :refer [put! >! >!! <! <!! go go-loop pub sub chan close! timeout alts!! alts! promise-chan]]
             [taoensso.timbre :refer [trace debug info warn error fatal]]
@@ -135,10 +135,10 @@
              (query @(ns-resolve rns 'get-routed-messages))
              ))))
 
-(defcomponentrecord MessageRouter)
+(defcomponentrecord MessageRouterX)
 
 (defn new-comp [ch-in ch-out rulens]
-  (map->MessageRouter {:processfn process
+  (map->MessageRouterX {:processfn process
                        :ch-in ch-in
                        :ch-out ch-out
                        :rulens rulens}))

@@ -1,4 +1,135 @@
 (ns ow.starbuck.message-router-test
-  (:require [ow.starbuck.message-router :as sut]
+  (:require [ow.starbuck.message-router :as mr]
             #?(:clj [clojure.test :as t]
                :cljs [cljs.test :as t :include-macros true])))
+
+;;;
+;;; EXAMPLE RULESET:
+;;;
+
+(def example-ruleset
+  {:routes {:switch-booking
+
+            {:transitions {;;; you can define the next component statically:
+                           nil :database-reader
+
+                           ;;; you can provide a map instead of a keyword.
+                           ;;; :next defines the next component. it can be a keyword but also a function that
+                           ;;;       returns a keyword.
+                           ;;; :postprocess is an optional function that can alter the msg after routing.
+                           :database-reader {:next (fn [msg] :converter)
+                                             :postprocess (fn [msg] (assoc msg :postprocessed true))}
+
+                           ;;; :preprocess is an optional function that can alter the msg before routing.
+                           ;;; :next can also be a sequence of next components. that will multiply resulting
+                           ;;;       messages. in this case, it will generate messages to the components
+                           ;;;       :logger and :http-server.
+                           :converter {:preprocess (fn [msg] (assoc msg :preprocessed true))
+                                       :next [:logger (fn [msg] :http-server)]}
+
+                           ;;; if :next is set to nil, the message will not be routed:
+                           :logger (fn [msg] nil)
+                           :http-server nil}
+
+             ;;; event-handlers generate additional messages, depending on whether or not a msg
+             ;;; contains a specified keyword (:error in the example below).
+             ;;; you can define event-handlers that are local to the route. local event-handlers
+             ;;; override global event-handlers for the same keyword.
+             ;;; you can provide a map.
+             ;;; :next within that map defines the component the generated msg will be routed to.
+             ;;; :abort? (if set to true) will throw away the original message. only the
+             ;;;         event-handler message will be routed.
+             :event-handlers {:error {:next :http-server
+                                      :abort? true}}}}
+
+   :event-handlers {:error :foobar
+                    :notify (fn [msg] :notifier)
+                    :pending-mails [:logger (fn [msg] :mailer)]}})
+
+(t/deftest route1
+  (let [msg {:route :switch-booking}]
+    (t/is (= (mr/advance msg example-ruleset)
+             [{:route :switch-booking
+               :comp :database-reader
+               :starbuck/route-count 1}]))))
+
+(t/deftest route2
+  (let [msg {:route :switch-booking
+             :comp :database-reader
+             :starbuck/route-count 1}]
+    (t/is (= (mr/advance msg example-ruleset)
+             [{:route :switch-booking
+               :comp :converter
+               :starbuck/route-count 2
+               :postprocessed true}]))))
+
+(t/deftest route3
+  (let [msg {:route :switch-booking
+             :comp :converter
+             :starbuck/route-count 2}]
+    (t/is (= (mr/advance msg example-ruleset)
+             [{:route :switch-booking
+               :comp :logger
+               :starbuck/route-count 3
+               :preprocessed true}
+              {:route :switch-booking
+               :comp :http-server
+               :starbuck/route-count 3
+               :preprocessed true}]))))
+
+(t/deftest route4
+  (let [msg {:route :switch-booking
+             :comp :logger}]
+    (t/is (= (mr/advance msg example-ruleset)
+             []))))
+
+(t/deftest route5
+  (let [msg {:route :switch-booking
+             :comp :http-server}]
+    (t/is (= (mr/advance msg example-ruleset)
+             []))))
+
+(t/deftest event1
+  (let [msg {:route :switch-booking
+             :notify true}]
+    (t/is (= (mr/advance msg example-ruleset)
+             [{:route :switch-booking
+               :comp :database-reader
+               :starbuck/route-count 1
+               :notify true}
+              {:route :switch-booking
+               :comp :notifier
+               :starbuck/route-count 1
+               :notify true}]))))
+
+(t/deftest event2
+  (let [msg {:route :switch-booking
+             :comp :database-reader
+             :pending-mails true}]
+    (t/is (= (mr/advance msg example-ruleset)
+             [{:route :switch-booking
+               :comp :converter
+               :starbuck/route-count 1
+               :postprocessed true
+               :pending-mails true}
+              {:route :switch-booking
+               :comp :logger
+               :starbuck/route-count 1
+               :postprocessed true
+               :pending-mails true}
+              {:route :switch-booking
+               :comp :mailer
+               :starbuck/route-count 1
+               :postprocessed true
+               :pending-mails true}]))))
+
+(t/deftest event3
+  (let [msg {:route :switch-booking
+             :comp :database-reader
+             :error true}]
+    (t/is (= (mr/advance msg example-ruleset)
+             [{:route :switch-booking
+               :comp :http-server
+               :starbuck/route-count 1
+               :postprocessed true
+               :error true}]))))

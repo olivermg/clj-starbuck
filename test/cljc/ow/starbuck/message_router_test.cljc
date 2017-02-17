@@ -133,3 +133,20 @@
                :starbuck/route-count 1
                :postprocessed true
                :error true}]))))
+
+(t/deftest route-err1
+  (let [msg {:route :98hosedgosg}]
+    (t/is (= (mr/advance msg example-ruleset)
+             []))))
+
+(t/deftest route-err2
+  (let [msg {:route :switch-booking
+             :comp :soagdoe3245}]
+    (t/is (= (mr/advance msg example-ruleset)
+             []))))
+
+(t/deftest event-err1
+  (let [msg {:route :saoiuhg08ehn
+             :error true}]
+    (t/is (= (mr/advance msg example-ruleset)
+             []))))

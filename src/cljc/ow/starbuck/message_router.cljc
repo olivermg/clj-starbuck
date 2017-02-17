@@ -1,37 +1,9 @@
 (ns ow.starbuck.message-router
   (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
-            ;;;[clara.rules :as cr]
+            [ow.starbuck.core :refer [defcomponentrecord] :as oc]))
 
-            ;;;[clojure.walk :refer [macroexpand-all]]
-            ;;;[clojure.string :as str]
-            [ow.starbuck.core :refer [defcomponentrecord] :as oc]
-            ))
-
-;;;
-;;; EXAMPLE RULESET:
-;;;
-(def example-ruleset
-  {:routes {:switch-booking
-
-            {:transitions {nil {:next :database-reader}
-
-                           :database-reader {:next (fn [req] :converter)
-                                             :postprocess (fn [req] (assoc req :postprocessed true))}
-
-                           :converter {:preprocess (fn [req] (assoc req :preprocessed true))
-                                       :next [:logger :http-server]}
-
-                           :logger {:next (fn [req] (println "HANDLING LOG REQ") nil)}}
-
-             :event-handlers {:error {:next :http-server
-                                      :abort? true}}}}
-
-   :event-handlers {:pending-mails {:next :mailer}}})
-
-#_(defn compile [cfg]
-  "Takes a config and compiles it into a ruleset."
-  (let [ns (create-ns (gensym "message-router-ruleset-"))]
-    ))
+(defn- printable-msg [msg]
+  (select-keys msg #{:route :comp :starbuck/route-count}))
 
 (defn- doprocess [type transition msgs]
   (if-let [f (get transition type)]
@@ -41,42 +13,48 @@
 (def preprocess (partial doprocess :preprocess))
 (def postprocess (partial doprocess :postprocess))
 
-(defn- goto-next [transition msgs]
-  (if-let [next (or (and (map? transition) (:next transition))
-                    transition)]
+(defn- next->fns [m]
+  (when-let [next (or (and (map? m) (:next m))
+                      m)]
     (let [nexts (if (sequential? next)
                   next
-                  [next])
-          nextfs (map #(if (fn? %)
-                         (fn [msg] (% msg))
-                         (constantly %))
-                      nexts)]
-      (->> (map #(map (fn [nextf]
-                        (assoc % :comp (nextf %)))
-                      nextfs)
-                msgs)
-           (apply concat)
-           (remove #(nil? (:comp %)))))
-    (warn "next component undefined in transition" {:transition transition})))
+                  [next])]
+      (map #(if (fn? %)
+              (fn [msg] (% msg))
+              (constantly %))
+           nexts))))
+
+(defn- goto-next [transition msgs]
+  (if-let [nextfs (next->fns transition)]
+    (->> (map #(map (fn [nextf]
+                      (assoc % :comp (nextf %)))
+                    nextfs)
+              msgs)
+         (apply concat)
+         (remove #(nil? (:comp %))))
+    (do (warn "next component undefined in transition" {:transition transition
+                                                        :msgs (mapv printable-msg msgs)})
+        [])))
 
 (defn- handle-events [eventhandlers msg]
-  (let [{:keys [msg evmsgs]}
+  (let [{:keys [abort? evmsgs]}
         (reduce (fn [s [key eventhandler]]
-                  (if-let [next (:next eventhandler)]
+                  (if-let [nextfs (next->fns eventhandler)]
                     (if (contains? msg key)
-                      (let [evmsg (assoc msg :comp next)]
-                        (if (:abort? eventhandler)
-                          (-> (dissoc s :msg)
-                              (update :evmsgs #(conj % evmsg)))
-                          (update s :evmsgs #(conj % evmsg))))
+                      (let [evmsgs (map #(assoc msg :comp (% msg))
+                                        nextfs)]
+                        (-> (update s :abort? #(or % (:abort? eventhandler)))
+                            (update :evmsgs #(concat % evmsgs))))
                       s)
-                    (warn "next component undefined in eventhandler" {:eventhandler eventhandler})))
-                {:msg msg
+                    (do (warn "next component undefined in eventhandler" {:eventhandler eventhandler
+                                                                          :msg (printable-msg msg)})
+                        s)))
+                {:abort? nil
                  :evmsgs []}
                 eventhandlers)]
-    (if msg
-      (conj evmsgs msg)
-      evmsgs)))
+    (if abort?
+      evmsgs
+      (conj evmsgs msg))))
 
 (defn- handle-events-multi [eventhandlers msgs]
   (->> (map #(handle-events eventhandlers %) msgs)

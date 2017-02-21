@@ -5,13 +5,10 @@
 (defn- printable-msg [msg]
   (select-keys msg #{:route :comp :starbuck/route-count}))
 
-(defn- doprocess [type transition msgs]
-  (if-let [f (get transition type)]
+(defn- transform [transition msgs]
+  (if-let [f (get transition :transform)]
     (map f msgs)
     msgs))
-
-(def preprocess (partial doprocess :preprocess))
-(def postprocess (partial doprocess :postprocess))
 
 (defn- next->fns [m]
   (when-let [next (or (and (map? m) (:next m))
@@ -69,9 +66,8 @@
           evenths (merge (get ruleset :event-handlers)
                          (get route :event-handlers))
           f (comp (partial handle-events-multi evenths)
-                  (partial postprocess trans)
                   (partial goto-next trans)
-                  (partial preprocess trans))
+                  (partial transform trans))
           res (->> (f [msg])
                    (map #(update % :starbuck/route-count (fn [n] (inc (or n 0))))))]
       (debug "routing ending with" (mapv #(select-keys % #{:route :comp :starbuck/route-count}) res))

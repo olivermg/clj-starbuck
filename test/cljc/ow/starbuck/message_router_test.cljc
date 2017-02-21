@@ -17,14 +17,14 @@
                            ;;; :next defines the next component. it can be a keyword but also a function that
                            ;;;       returns a keyword.
                            ;;; :postprocess is an optional function that can alter the msg after routing.
-                           :database-reader {:next (fn [msg] :converter)
-                                             :postprocess (fn [msg] (assoc msg :postprocessed true))}
+                           :database-reader {:transform (fn [msg] (assoc msg :transformed true))
+                                             :next (fn [msg] :converter)}
 
                            ;;; :preprocess is an optional function that can alter the msg before routing.
                            ;;; :next can also be a sequence of next components. that will multiply resulting
                            ;;;       messages. in this case, it will generate messages to the components
                            ;;;       :logger and :http-server.
-                           :converter {:preprocess (fn [msg] (assoc msg :preprocessed true))
+                           :converter {:transform (fn [msg] (assoc msg :transformed true))
                                        :next [:logger (fn [msg] :http-server)]}
 
                            ;;; if :next is set to nil, the message will not be routed:
@@ -61,7 +61,7 @@
              [{:route :switch-booking
                :comp :converter
                :starbuck/route-count 2
-               :postprocessed true}]))))
+               :transformed true}]))))
 
 (t/deftest route3
   (let [msg {:route :switch-booking
@@ -71,11 +71,11 @@
              [{:route :switch-booking
                :comp :logger
                :starbuck/route-count 3
-               :preprocessed true}
+               :transformed true}
               {:route :switch-booking
                :comp :http-server
                :starbuck/route-count 3
-               :preprocessed true}]))))
+               :transformed true}]))))
 
 (t/deftest route4
   (let [msg {:route :switch-booking
@@ -110,17 +110,17 @@
              [{:route :switch-booking
                :comp :converter
                :starbuck/route-count 1
-               :postprocessed true
+               :transformed true
                :pending-mails true}
               {:route :switch-booking
                :comp :logger
                :starbuck/route-count 1
-               :postprocessed true
+               :transformed true
                :pending-mails true}
               {:route :switch-booking
                :comp :mailer
                :starbuck/route-count 1
-               :postprocessed true
+               :transformed true
                :pending-mails true}]))))
 
 (t/deftest event3
@@ -131,7 +131,7 @@
              [{:route :switch-booking
                :comp :http-server
                :starbuck/route-count 1
-               :postprocessed true
+               :transformed true
                :error true}]))))
 
 (t/deftest route-err1

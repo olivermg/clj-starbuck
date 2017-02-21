@@ -24,8 +24,12 @@
                            ;;; :next can also be a sequence of next components. that will multiply resulting
                            ;;;       messages. in this case, it will generate messages to the components
                            ;;;       :logger and :http-server.
-                           :converter {:transform (fn [msg] (assoc msg :transformed true))
-                                       :next [:logger (fn [msg] :http-server)]}
+                           :converter [{:transform (fn [msg] (assoc msg :transformed 1))
+                                        :next :foo}
+                                       {:transform (fn [msg] (assoc msg :transformed 2))
+                                        :next (fn [msg] :bar)}
+                                       {:transform (fn [msg] (assoc msg :transformed 3))
+                                        :next [:logger (fn [msg] :http-server)]}]
 
                            ;;; if :next is set to nil, the message will not be routed:
                            :logger (fn [msg] nil)
@@ -69,13 +73,21 @@
              :starbuck/route-count 2}]
     (t/is (= (mr/advance msg example-ruleset)
              [{:route :switch-booking
+               :comp :foo
+               :starbuck/route-count 3
+               :transformed 1}
+              {:route :switch-booking
+               :comp :bar
+               :starbuck/route-count 3
+               :transformed 2}
+              {:route :switch-booking
                :comp :logger
                :starbuck/route-count 3
-               :transformed true}
+               :transformed 3}
               {:route :switch-booking
                :comp :http-server
                :starbuck/route-count 3
-               :transformed true}]))))
+               :transformed 3}]))))
 
 (t/deftest route4
   (let [msg {:route :switch-booking
@@ -94,11 +106,10 @@
              :notify true}]
     (t/is (= (mr/advance msg example-ruleset)
              [{:route :switch-booking
-               :comp :database-reader
-               :starbuck/route-count 1
+               :comp :notifier
                :notify true}
               {:route :switch-booking
-               :comp :notifier
+               :comp :database-reader
                :starbuck/route-count 1
                :notify true}]))))
 
@@ -108,17 +119,13 @@
              :pending-mails true}]
     (t/is (= (mr/advance msg example-ruleset)
              [{:route :switch-booking
-               :comp :converter
-               :starbuck/route-count 1
-               :transformed true
-               :pending-mails true}
-              {:route :switch-booking
                :comp :logger
-               :starbuck/route-count 1
-               :transformed true
                :pending-mails true}
               {:route :switch-booking
                :comp :mailer
+               :pending-mails true}
+              {:route :switch-booking
+               :comp :converter
                :starbuck/route-count 1
                :transformed true
                :pending-mails true}]))))
@@ -130,8 +137,6 @@
     (t/is (= (mr/advance msg example-ruleset)
              [{:route :switch-booking
                :comp :http-server
-               :starbuck/route-count 1
-               :transformed true
                :error true}]))))
 
 (t/deftest route-err1
@@ -149,4 +154,6 @@
   (let [msg {:route :saoiuhg08ehn
              :error true}]
     (t/is (= (mr/advance msg example-ruleset)
-             []))))
+             [{:route :saoiuhg08ehn
+               :comp :foobar
+               :error true}]))))

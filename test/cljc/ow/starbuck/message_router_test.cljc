@@ -101,6 +101,12 @@
     (t/is (= (mr/advance msg example-ruleset)
              []))))
 
+(t/deftest route6
+  (let [msg {:route :switch-booking
+             :comp :soaihgfodser}]
+    (t/is (= (mr/advance msg example-ruleset)
+             []))))
+
 (t/deftest event1
   (let [msg {:route :switch-booking
              :notify true}]

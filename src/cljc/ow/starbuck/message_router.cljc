@@ -3,10 +3,10 @@
             [ow.starbuck.core :refer [defcomponentrecord] :as oc]))
 
 (defn- printable-msg [msg]
-  (select-keys msg #{:route :comp :starbuck/route-count}))
+  (select-keys msg #{::route ::component ::transition-count ::max-transitions}))
 
-(defn- inc-route-count [msg]
-  (update msg :starbuck/route-count
+(defn- inc-transition-count [msg]
+  (update msg ::transition-count
           #(inc (or % 0))))
 
 (defn- next->fns [m]
@@ -28,11 +28,11 @@
 (defn- goto-next [transition msgs]
   (if-let [nextfs (next->fns transition)]
     (->> (map #(map (fn [nextf]
-                      (assoc % :comp (nextf %)))
+                      (assoc % ::component (nextf %)))
                     nextfs)
               msgs)
          (apply concat)
-         (remove #(nil? (:comp %))))
+         (remove #(nil? (::component %))))
     (do (warn "next component undefined in transition" {:transition transition
                                                         :msgs (mapv printable-msg msgs)})
         [])))
@@ -47,7 +47,7 @@
   (reduce (fn [s [key eventhandler]]
             (if-let [nextfs (next->fns eventhandler)]
               (if (contains? msg key)
-                (let [evmsgs (map #(assoc msg :comp (% msg))
+                (let [evmsgs (map #(assoc msg ::component (% msg))
                                   nextfs)]
                   (-> (update s :abort? #(or % (:abort? eventhandler)))
                       (update :evmsgs #(concat % evmsgs))))
@@ -59,12 +59,21 @@
            :evmsgs []}
           eventhandlers))
 
-(defn advance [msg ruleset]
+(defn message [route map & {:keys [max-transitions]
+                            :or {max-transitions 100}}]
+  "Creates a new routable message."
+  (assoc map
+         ::route route
+         ::component nil
+         ::transition-count 0
+         ::max-transitions max-transitions))
+
+(defn advance [ruleset msg]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
   (debug "routing starting with" (printable-msg msg))
-  (if (< (or (:starbuck/route-count msg) 0) 100)
-    (let [route (get-in ruleset [:routes (:route msg)])
-          trans (get-in route [:transitions (:comp msg)])
+  (if (< (::transition-count msg) 100)
+    (let [route (get-in ruleset [:routes (::route msg)])
+          trans (get-in route [:transitions (::component msg)])
           transs (if (sequential? trans)
                    trans
                    [trans])
@@ -74,10 +83,10 @@
           resmsgs (if abort?
                     evmsgs
                     (concat evmsgs (->> (goto-next-and-transform transs [msg])
-                                        (map inc-route-count))))]
+                                        (map inc-transition-count))))]
       (debug "routing ending with" (mapv printable-msg resmsgs))
       resmsgs)
-    (do (warn "dropping message due to high route-count")
+    (do (warn "dropping message due to high transition-count")
         [])))
 
 
@@ -92,3 +101,26 @@
                        :ch-in ch-in
                        :ch-out ch-out
                        :ruleset ruleset}))
+
+
+
+(comment
+
+  (def ruleset1
+    ;;; you can have many routes
+    {:routes
+
+     ;;; defining a route :book-flight
+     {:book-flight
+
+      ;;; routes define transitions from one "component" to other "component(s)"
+      {:transitions {nil :auth-checker
+
+                     :auth-checker {:next :overbooked-checker}
+
+                     :overbooked-checker {:next (fn [msg] :booker)}
+
+                     :booker {:transform (fn [msg] (assoc msg :checked true))
+                              :next [:invoice-generator (fn [msg] :notifier)]}}}}})
+
+  )

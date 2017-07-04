@@ -1,6 +1,12 @@
 (ns ow.starbuck.message-router
   (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
-            [ow.starbuck.core :refer [defcomponentrecord] :as oc]))
+            #?(:clj  [clojure.core.async.impl.protocols :as ap]
+               :cljs [cljs.core.async.impl.protocols :as ap])
+            #?(:clj  [clojure.core.async :as a]
+               :cljs [cljs.core.async :as a])
+            [ow.starbuck.protocols :as p]
+            #_[ow.starbuck.core :refer [defcomponentrecord] :as oc]
+            ))
 
 (defn- printable-msg [msg]
   (select-keys msg #{::route ::component ::transition-count ::max-transitions}))
@@ -28,11 +34,13 @@
 (defn- goto-next [transition msgs]
   (if-let [nextfs (next->fns transition)]
     (->> (map #(map (fn [nextf]
-                      (assoc % ::component (nextf %)))
+                      (update % ::component
+                              (fn [prev-comps]
+                                (apply list (take 2 (cons (nextf %) prev-comps))))))
                     nextfs)
               msgs)
          (apply concat)
-         (remove #(nil? (::component %))))
+         (remove #(nil? (peek (::component %)))))
     (do (warn "next component undefined in transition" {:transition transition
                                                         :msgs (mapv printable-msg msgs)})
         [])))
@@ -47,7 +55,9 @@
   (reduce (fn [s [key eventhandler]]
             (if-let [nextfs (next->fns eventhandler)]
               (if (contains? msg key)
-                (let [evmsgs (map #(assoc msg ::component (% msg))
+                (let [evmsgs (map #(update msg ::component
+                                           (fn [prev-comps]
+                                             (apply list (take 2 (cons (% msg) prev-comps)))))
                                   nextfs)]
                   (-> (update s :abort? #(or % (:abort? eventhandler)))
                       (update :evmsgs #(concat % evmsgs))))
@@ -59,21 +69,12 @@
            :evmsgs []}
           eventhandlers))
 
-(defn message [route map & {:keys [max-transitions]
-                            :or {max-transitions 100}}]
-  "Creates a new routable message."
-  (assoc map
-         ::route route
-         ::component nil
-         ::transition-count 0
-         ::max-transitions max-transitions))
-
 (defn advance [ruleset msg]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
   (debug "routing starting with" (printable-msg msg))
   (if (< (::transition-count msg) 100)
     (let [route (get-in ruleset [:routes (::route msg)])
-          trans (get-in route [:transitions (::component msg)])
+          trans (get-in route [:transitions (peek (::component msg))])
           transs (if (sequential? trans)
                    trans
                    [trans])
@@ -89,14 +90,39 @@
     (do (warn "dropping message due to high transition-count")
         [])))
 
+#_(defrecord MessageRouter [ruleset]
 
+  p/Router
 
-(defn- process [this req]
+  (advance [this msg]
+    (advance ruleset msg)))
+
+#_(defn message-router [ruleset]
+  (->MessageRouter ruleset))
+
+(defn message [route map & {:keys [max-transitions]
+                            :or {max-transitions 100}}]
+  "Creates a new routable message."
+  (assoc map
+         ::route route
+         ::component '()
+         ::transition-count 0
+         ::max-transitions max-transitions))
+
+(defn dispatch [msg]
+  (let [component (peek (::component msg))]
+    (cond (fn? component)                   [true  (component msg)]
+          (satisfies? ap/Channel component) [true  (a/put! component msg)]
+          (satisfies? p/Tunnel component)   [true  (->> (update msg ::component pop)
+                                                        (p/send component))]
+          true                              [false component])))
+
+#_(defn- process [this req]
   (advance req (:ruleset this)))
 
-(defcomponentrecord MessageRouter)
+#_(defcomponentrecord MessageRouter)
 
-(defn new-comp [ch-in ch-out ruleset]
+#_(defn new-comp [ch-in ch-out ruleset]
   (map->MessageRouter {:processfn process
                        :ch-in ch-in
                        :ch-out ch-out
@@ -105,6 +131,11 @@
 
 
 (comment
+
+  (def ruleset2
+    {:routes
+     {:book-flight
+      {:transitions {:auth-checker :overbooked-checker-remote}}}})
 
   (def ruleset1
     ;;; you can have many routes
@@ -116,11 +147,21 @@
       ;;; routes define transitions from one "component" to other "component(s)"
       {:transitions {nil :auth-checker
 
-                     :auth-checker {:next :overbooked-checker}
+                     :auth-checker {:next (fn [msg]
+                                            (ow.starbuck.tunnel-simple/->TunnelSimple ruleset2))}
 
                      :overbooked-checker {:next (fn [msg] :booker)}
 
                      :booker {:transform (fn [msg] (assoc msg :checked true))
                               :next [:invoice-generator (fn [msg] :notifier)]}}}}})
+
+  #_(def router1 (message-router ruleset1))
+
+  (->> (message :book-flight {:foo :bar})
+       (advance ruleset1)
+       first
+       (advance ruleset1)
+       first
+       (dispatch))
 
   )

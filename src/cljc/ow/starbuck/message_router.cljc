@@ -155,6 +155,9 @@
                      :booker {:transform (fn [msg] (assoc msg :checked true))
                               :next [:invoice-generator (fn [msg] :notifier)]}}}}})
 
+  (def dispatchset1
+    {})
+
   #_(def router1 (message-router ruleset1))
 
   (->> (message :book-flight {:foo :bar})

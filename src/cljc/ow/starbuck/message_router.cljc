@@ -69,7 +69,7 @@
            :evmsgs []}
           eventhandlers))
 
-(defn advance [ruleset msg]
+(defn advance [{:keys [ruleset] :as router} msg]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
   (debug "routing starting with" (printable-msg msg))
   (if (< (::transition-count msg) 100)
@@ -89,6 +89,12 @@
       resmsgs)
     (do (warn "dropping message due to high transition-count")
         [])))
+
+(defn make-router [unit ruleset & {:keys [dispatch?]
+                                   :or {dispatch? true}}]
+  {:unit unit
+   :ruleset ruleset
+   :dispatch? dispatch?})
 
 #_(defrecord MessageRouter [ruleset]
 
@@ -132,14 +138,15 @@
 
 (comment
 
-  (def ruleset2
-    {:routes
-     {:book-flight
-      {:transitions {:auth-checker :overbooked-checker-remote}}}})
-
   (def ruleset1
-    ;;; you can have many routes
-    {:routes
+    {:units
+     {:browser
+      #{:overbooked-checker :booker}
+      :server
+      #{:auth-checker}}
+
+     ;;; you can have many routes
+     :routes
 
      ;;; defining a route :book-flight
      {:book-flight
@@ -154,9 +161,6 @@
 
                      :booker {:transform (fn [msg] (assoc msg :checked true))
                               :next [:invoice-generator (fn [msg] :notifier)]}}}}})
-
-  (def dispatchset1
-    {})
 
   #_(def router1 (message-router ruleset1))
 

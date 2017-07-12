@@ -55,7 +55,13 @@
 (defn- get-component-unit [{:keys [ruleset] :as router} component]
   (-> (:units ruleset)
       owc/map-invert-coll
-      component))
+      (get component)))
+
+(defn- get-tunnel [{:keys [unit] :as router} component]
+  (and unit
+       (let [cunit (get-component-unit router component)]
+         (and (not= unit cunit)
+              cunit))))
 
 (defn- handle-events [eventhandlers msg]
   (reduce (fn [s [key eventhandler]]
@@ -75,7 +81,7 @@
            :evmsgs []}
           eventhandlers))
 
-(defn advance [{:keys [unit ruleset] :as router} msg]
+(defn advance [{:keys [ruleset] :as router} msg]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
   (debug "routing starting with" (printable-msg msg))
   (if (< (::transition-count msg) 100)
@@ -96,9 +102,10 @@
     (do (warn "dropping message due to high transition-count")
         [])))
 
-(defn make-router [ruleset & {:keys [unit dispatch?]
-                              :or {dispatch? true}}]
+(defn make-router [ruleset components & {:keys [unit dispatch?]
+                                         :or {dispatch? true}}]
   {:unit unit
+   :components components
    :ruleset ruleset
    :dispatch? dispatch?})
 
@@ -121,13 +128,19 @@
          ::transition-count 0
          ::max-transitions max-transitions))
 
-(defn dispatch [{:keys [unit] :as router} msg]
-  (let [component (peek (::component msg))]
-    (cond (fn? component)                   [true  (component msg)]
-          (satisfies? ap/Channel component) [true  (a/put! component msg)]
-          (satisfies? p/Tunnel component)   [true  (->> (update msg ::component pop)
-                                                        (p/send component))]
-          true                              [false component])))
+(defn dispatch [{:keys [components] :as router} msg]
+  (when-let [component (peek (::component msg))]
+    (let [tunnel (get-tunnel router component)
+          dest (or tunnel component)
+          destcomp (get components dest)]
+      (cond (fn? destcomp)                   (destcomp msg)
+            (satisfies? ap/Channel destcomp) (a/put! destcomp msg)
+            (satisfies? p/Tunnel destcomp)   (p/send destcomp msg)
+            true (throw (ex-info "cannot dispatch" {:router router
+                                                    :msg msg
+                                                    :tunnel tunnel
+                                                    :component component
+                                                    :dest dest}))))))
 
 #_(defn- process [this req]
   (advance req (:ruleset this)))
@@ -176,5 +189,20 @@
        (advance ruleset1)
        first
        (dispatch))
+
+
+  (dispatch {:unit :server
+             :components {:a #(println "a" %)
+                          :b #(println "b" %)
+                          :c #(println "c" %)
+                          :d #(println "d" %)
+                          :e #(println "e" %)
+                          :f #(println "f" %)
+                          :browser #(println "browser" %)
+                          :server #(println "server" %)}
+             :ruleset {:units {:browser #{:a :b :c}
+                               :server #{:d :e :f}}}}
+            {::component (list :c)
+             :foo :bar})
 
   )

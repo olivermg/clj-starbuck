@@ -4,6 +4,7 @@
                :cljs [cljs.core.async.impl.protocols :as ap])
             #?(:clj  [clojure.core.async :as a]
                :cljs [cljs.core.async :as a])
+            [ow.clojure :as owc]
             [ow.starbuck.protocols :as p]
             #_[ow.starbuck.core :refer [defcomponentrecord] :as oc]
             ))
@@ -51,6 +52,11 @@
             transitions)
        (apply concat)))
 
+(defn- get-component-unit [{:keys [ruleset] :as router} component]
+  (-> (:units ruleset)
+      owc/map-invert-coll
+      component))
+
 (defn- handle-events [eventhandlers msg]
   (reduce (fn [s [key eventhandler]]
             (if-let [nextfs (next->fns eventhandler)]
@@ -69,7 +75,7 @@
            :evmsgs []}
           eventhandlers))
 
-(defn advance [{:keys [ruleset] :as router} msg]
+(defn advance [{:keys [unit ruleset] :as router} msg]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
   (debug "routing starting with" (printable-msg msg))
   (if (< (::transition-count msg) 100)
@@ -90,8 +96,8 @@
     (do (warn "dropping message due to high transition-count")
         [])))
 
-(defn make-router [unit ruleset & {:keys [dispatch?]
-                                   :or {dispatch? true}}]
+(defn make-router [ruleset & {:keys [unit dispatch?]
+                              :or {dispatch? true}}]
   {:unit unit
    :ruleset ruleset
    :dispatch? dispatch?})
@@ -115,7 +121,7 @@
          ::transition-count 0
          ::max-transitions max-transitions))
 
-(defn dispatch [msg]
+(defn dispatch [{:keys [unit] :as router} msg]
   (let [component (peek (::component msg))]
     (cond (fn? component)                   [true  (component msg)]
           (satisfies? ap/Channel component) [true  (a/put! component msg)]
@@ -140,10 +146,10 @@
 
   (def ruleset1
     {:units
-     {:browser
-      #{:overbooked-checker :booker}
-      :server
-      #{:auth-checker}}
+     {:browser {:components #{:overbooked-checker :booker}
+                :via :server-tunnel}
+      :server {:components #{:auth-checker}
+               :via :server-tunnel}}
 
      ;;; you can have many routes
      :routes

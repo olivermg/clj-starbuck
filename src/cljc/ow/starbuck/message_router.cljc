@@ -243,16 +243,18 @@
         (let [sub-ch (a/sub input-pub comp-kw (a/chan))
               timeout (+ 20000 (rand-int 2000))]
           (a/go-loop [[msg _] (a/alts! [sub-ch (a/timeout timeout)])]
-            (println "got component msg in" comp-kw "-" msg)
+            (println "got component msg in" comp-kw "-" msg "on thread" (-> Thread .currentThread .getId))
             (when msg
+              (Thread/sleep 1000)
               (a/put! output-ch (update msg :visited-components #(conj % [comp-kw (java.util.Date.)])))
               (recur (a/alts! [sub-ch (a/timeout timeout)]))))))
 
       (defn start-async-router [router router-kw input-ch output-ch]
         (let [timeout (+ 20000 (rand-int 2000))]
           (a/go-loop [[msg _] (a/alts! [input-ch (a/timeout timeout)])]
-            (println "got router msg in" router-kw "-" msg)
+            (println "got router msg in" router-kw "-" msg "on thread" (-> Thread .currentThread .getId))
             (when msg
+              (Thread/sleep 1000)
               (route router msg)
               (recur (a/alts! [input-ch (a/timeout timeout)])))))))
 

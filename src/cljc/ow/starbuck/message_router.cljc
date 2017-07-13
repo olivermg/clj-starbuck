@@ -102,25 +102,31 @@
          (and (not= unit cunit)
               cunit))))
 
-(defn dispatch [{:keys [components] :as router} msg]
+(defn- dispatch-tunnel [{:keys [components] :as router} tunnel msg]
+  (let [tunnel-comp (get components tunnel)
+        msg (update msg ::component pop)]
+    (cond (fn? tunnel-comp)                   (tunnel-comp msg)
+          (satisfies? ap/Channel tunnel-comp) (a/put! tunnel-comp msg)
+          (satisfies? p/Tunnel tunnel-comp)   (p/send tunnel-comp msg)
+          true (throw (ex-info "invalid tunnel" {:tunnel tunnel
+                                                 :tunnel-comp tunnel-comp
+                                                 :msg msg})))))
+
+(defn- dispatch-component [{:keys [components] :as router} component msg]
+  (let [comp (or (get components component)
+                 (get components :DEFAULT))]
+    (cond (fn? comp)                    (comp msg)
+          (satisfies? ap/Channel comp)  (a/put! comp msg)
+          (satisfies? p/Component comp) (p/process comp msg)
+          true (throw (ex-info "invalid component" {:component component
+                                                    :comp comp
+                                                    :msg msg})))))
+
+(defn dispatch [router msg]
   (when-let [component (peek (::component msg))]
-    (let [tunnel (get-tunnel router component)
-          msg (if tunnel
-                (update msg ::component pop)
-                msg)
-          dest (or tunnel component)
-          destcomp (or (get components dest)
-                       (get components :DEFAULT))]
-      (cond (fn? destcomp)                   (destcomp msg)
-            (satisfies? ap/Channel destcomp) (a/put! destcomp msg)
-            (satisfies? p/Tunnel destcomp)   (p/send destcomp msg)
-            true (throw (ex-info "don't know how to dispatch"
-                                 {:router router
-                                  :msg msg
-                                  :tunnel tunnel
-                                  :component component
-                                  :dest dest
-                                  :destcomp destcomp}))))))
+    (if-let [tunnel (get-tunnel router component)]
+      (dispatch-tunnel router tunnel msg)
+      (dispatch-component router component msg))))
 
 (defn route [{:keys [dispatch?] :as router} msg]
   (let [resmsgs (advance router msg)]
@@ -185,7 +191,7 @@
                            :invoice-generator #(doto % (println "(invoice-generator)"))
                            ;;;:notifier #(doto % (println "(notifier)"))
                            :browser #(doto % (println "(server -> browser)"))
-                           :DEFAULT #(doto % (println "(default)"))})
+                           :DEFAULT #(doto % (println "(DEFAULT)"))})
 
   (def browser-router1 (make-router ruleset1 browser-components1 :unit :browser))
   (def server-router1 (make-router ruleset1 server-components1 :unit :server))

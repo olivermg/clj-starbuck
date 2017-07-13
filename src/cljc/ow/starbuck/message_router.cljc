@@ -52,17 +52,6 @@
             transitions)
        (apply concat)))
 
-(defn- get-component-unit [{:keys [ruleset] :as router} component]
-  (-> (:units ruleset)
-      owc/map-invert-coll
-      (get component)))
-
-(defn- get-tunnel [{:keys [unit] :as router} component]
-  (and unit
-       (let [cunit (get-component-unit router component)]
-         (and (not= unit cunit)
-              cunit))))
-
 (defn- handle-events [eventhandlers msg]
   (reduce (fn [s [key eventhandler]]
             (if-let [nextfs (next->fns eventhandler)]
@@ -102,22 +91,42 @@
     (do (warn "dropping message due to high transition-count")
         [])))
 
-(defn make-router [ruleset components & {:keys [unit dispatch?]
-                                         :or {dispatch? true}}]
-  {:unit unit
-   :components components
-   :ruleset ruleset
-   :dispatch? dispatch?})
+(defn- get-component-unit [{:keys [ruleset] :as router} component]
+  (-> (:units ruleset)
+      owc/map-invert-coll
+      (get component)))
 
-#_(defrecord MessageRouter [ruleset]
+(defn- get-tunnel [{:keys [unit] :as router} component]
+  (and unit
+       (let [cunit (get-component-unit router component)]
+         (and (not= unit cunit)
+              cunit))))
 
-  p/Router
+(defn dispatch [{:keys [components] :as router} msg]
+  (when-let [component (peek (::component msg))]
+    (let [tunnel (get-tunnel router component)
+          msg (if tunnel
+                (update msg ::component pop)
+                msg)
+          dest (or tunnel component)
+          destcomp (or (get components dest)
+                       (get components :DEFAULT))]
+      (cond (fn? destcomp)                   (destcomp msg)
+            (satisfies? ap/Channel destcomp) (a/put! destcomp msg)
+            (satisfies? p/Tunnel destcomp)   (p/send destcomp msg)
+            true (throw (ex-info "don't know how to dispatch"
+                                 {:router router
+                                  :msg msg
+                                  :tunnel tunnel
+                                  :component component
+                                  :dest dest
+                                  :destcomp destcomp}))))))
 
-  (advance [this msg]
-    (advance ruleset msg)))
-
-#_(defn message-router [ruleset]
-  (->MessageRouter ruleset))
+(defn route [{:keys [dispatch?] :as router} msg]
+  (let [resmsgs (advance router msg)]
+    (if dispatch?
+      (map (partial dispatch router) resmsgs)
+      resmsgs)))
 
 (defn message [route map & {:keys [max-transitions]
                             :or {max-transitions 100}}]
@@ -128,19 +137,13 @@
          ::transition-count 0
          ::max-transitions max-transitions))
 
-(defn dispatch [{:keys [components] :as router} msg]
-  (when-let [component (peek (::component msg))]
-    (let [tunnel (get-tunnel router component)
-          dest (or tunnel component)
-          destcomp (get components dest)]
-      (cond (fn? destcomp)                   (destcomp msg)
-            (satisfies? ap/Channel destcomp) (a/put! destcomp msg)
-            (satisfies? p/Tunnel destcomp)   (p/send destcomp msg)
-            true (throw (ex-info "cannot dispatch" {:router router
-                                                    :msg msg
-                                                    :tunnel tunnel
-                                                    :component component
-                                                    :dest dest}))))))
+(defn make-router [ruleset components & {:keys [unit dispatch?]
+                                         :or {dispatch? true}}]
+  {:unit unit
+   :components components
+   :ruleset ruleset
+   :dispatch? dispatch?})
+
 
 #_(defn- process [this req]
   (advance req (:ruleset this)))
@@ -158,37 +161,49 @@
 (comment
 
   (def ruleset1
-    {:units
-     {:browser {:components #{:overbooked-checker :booker}
-                :via :server-tunnel}
-      :server {:components #{:auth-checker}
-               :via :server-tunnel}}
+    {:units {:browser #{:input-validator :input-sanitizer}
+             :server #{:auth-checker :booker :invoice-generator :notifier}}
 
-     ;;; you can have many routes
-     :routes
+     :routes {:book-flight
+              {:transitions {nil :input-validator
 
-     ;;; defining a route :book-flight
-     {:book-flight
+                             :input-validator {:next :input-sanitizer}
 
-      ;;; routes define transitions from one "component" to other "component(s)"
-      {:transitions {nil :auth-checker
+                             :input-sanitizer {:next (fn [msg] :auth-checker)}
 
-                     :auth-checker {:next (fn [msg]
-                                            (ow.starbuck.tunnel-simple/->TunnelSimple ruleset2))}
+                             :auth-checker {:transform (fn [msg] (assoc msg :check #{:username :token}))
+                                            :next :booker}
 
-                     :overbooked-checker {:next (fn [msg] :booker)}
+                             :booker {:next [:invoice-generator (fn [msg] :notifier)]}}}}})
 
-                     :booker {:transform (fn [msg] (assoc msg :checked true))
-                              :next [:invoice-generator (fn [msg] :notifier)]}}}}})
+  (def browser-components1 {:input-validator #(doto % (println "(input-validator)"))
+                            :input-sanitizer #(doto % (println "(input-sanitizer)"))
+                            :server #(doto % (println "(browser -> server)"))})
 
-  #_(def router1 (message-router ruleset1))
+  (def server-components1 {:auth-checker #(doto % (println "(auth-checker)"))
+                           :booker #(doto % (println "(booker)"))
+                           :invoice-generator #(doto % (println "(invoice-generator)"))
+                           ;;;:notifier #(doto % (println "(notifier)"))
+                           :browser #(doto % (println "(server -> browser)"))
+                           :DEFAULT #(doto % (println "(default)"))})
 
-  (->> (message :book-flight {:foo :bar})
-       (advance ruleset1)
+  (def browser-router1 (make-router ruleset1 browser-components1 :unit :browser))
+  (def server-router1 (make-router ruleset1 server-components1 :unit :server))
+
+  (def message1 (message :book-flight {:foo :bar}))
+
+  (->> message1
+       (route browser-router1)
        first
-       (advance ruleset1)
+       (route browser-router1)
        first
-       (dispatch))
+       (route browser-router1)
+       first
+       (route server-router1)
+       first
+       (route server-router1)
+       first
+       (route server-router1))
 
 
   (dispatch {:unit :server

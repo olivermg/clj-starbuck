@@ -103,7 +103,7 @@
               cunit))))
 
 (defn- dispatch-tunnel [{:keys [components] :as router} tunnel msg]
-  (let [tunnel-comp (get components tunnel)
+  (let [tunnel-comp (get-in components [:tunnels tunnel])
         msg (update msg ::component pop)]
     (cond (fn? tunnel-comp)                   (tunnel-comp msg)
           (satisfies? ap/Channel tunnel-comp) (a/put! tunnel-comp msg)
@@ -113,8 +113,8 @@
                                                  :msg msg})))))
 
 (defn- dispatch-component [{:keys [components] :as router} component msg]
-  (let [comp (or (get components component)
-                 (get components :DEFAULT))]
+  (let [comp (or (get-in components [:components component])
+                 (get-in components [:components :DEFAULT]))]
     (cond (fn? comp)                    (comp msg)
           (satisfies? ap/Channel comp)  (a/put! comp msg)
           (satisfies? p/Component comp) (p/process comp msg)
@@ -182,16 +182,16 @@
 
                              :booker {:next [:invoice-generator (fn [msg] :notifier)]}}}}})
 
-  (def browser-components1 {:input-validator #(doto % (println "(input-validator)"))
-                            :input-sanitizer #(doto % (println "(input-sanitizer)"))
-                            :server #(doto % (println "(browser -> server)"))})
+  (def browser-components1 {:components {:input-validator #(doto % (println "(input-validator)"))
+                                         :input-sanitizer #(doto % (println "(input-sanitizer)"))}
+                            :tunnels {:server #(doto % (println "(browser -> server)"))}})
 
-  (def server-components1 {:auth-checker #(doto % (println "(auth-checker)"))
-                           :booker #(doto % (println "(booker)"))
-                           :invoice-generator #(doto % (println "(invoice-generator)"))
-                           ;;;:notifier #(doto % (println "(notifier)"))
-                           :browser #(doto % (println "(server -> browser)"))
-                           :DEFAULT #(doto % (println "(DEFAULT)"))})
+  (def server-components1 {:components {:auth-checker #(doto % (println "(auth-checker)"))
+                                        :booker #(doto % (println "(booker)"))
+                                        :invoice-generator #(doto % (println "(invoice-generator)"))
+                                        ;;;:notifier #(doto % (println "(notifier)"))
+                                        :DEFAULT #(doto % (println "(DEFAULT)"))}
+                           :tunnels {:browser #(doto % (println "(server -> browser)"))}})
 
   (def browser-router1 (make-router ruleset1 browser-components1 :unit :browser))
   (def server-router1 (make-router ruleset1 server-components1 :unit :server))

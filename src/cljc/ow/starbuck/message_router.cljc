@@ -1,8 +1,9 @@
 (ns ow.starbuck.message-router
+  ?#(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
   (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
             #?(:clj  [clojure.core.async.impl.protocols :as ap]
                :cljs [cljs.core.async.impl.protocols :as ap])
-            #?(:clj  [clojure.core.async :as a]
+            #?(:clj  [clojure.core.async :refer [go-loop] :as a]
                :cljs [cljs.core.async :as a])
             [ow.clojure :as owc]
             [ow.starbuck.protocols :as p]
@@ -242,7 +243,7 @@
       (defn start-async-component [comp-kw input-pub output-ch]
         (let [sub-ch (a/sub input-pub comp-kw (a/chan))
               timeout (+ 20000 (rand-int 2000))]
-          (a/go-loop [[msg _] (a/alts! [sub-ch (a/timeout timeout)])]
+          (go-loop [[msg _] (a/alts! [sub-ch (a/timeout timeout)])]
             (println "got component msg in" comp-kw "-" msg "on thread" (-> Thread .currentThread .getId))
             (when msg
               (Thread/sleep 1000)
@@ -251,7 +252,7 @@
 
       (defn start-async-router [router router-kw input-ch output-ch]
         (let [timeout (+ 20000 (rand-int 2000))]
-          (a/go-loop [[msg _] (a/alts! [input-ch (a/timeout timeout)])]
+          (go-loop [[msg _] (a/alts! [input-ch (a/timeout timeout)])]
             (println "got router msg in" router-kw "-" msg "on thread" (-> Thread .currentThread .getId))
             (when msg
               (Thread/sleep 1000)

@@ -24,7 +24,9 @@
                  [com.stuartsierra/component "0.3.1"]                  ;; system + component + lifecycle management
                  [org.clojure/core.async "0.2.395"]                    ;; async communication (channels)
                  [org.toomuchcode/clara-rules "0.11.1"]                ;; rule engine (forward chaining)
-                 [com.taoensso/timbre "4.4.0"]                         ;; logging facility
+                 [com.taoensso/timbre "4.10.0"]                        ;; logging facility
+                 [com.taoensso/sente "1.11.0"]                         ;; websockets/ajax communications
+                 [http-kit "2.2.0"]                                    ;; http server for websockets/ajax communications
                  ]
   :plugins [[lein-cljsbuild "1.1.5"]]
   :source-paths ["src/clj" "src/cljc"]

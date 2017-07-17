@@ -11,6 +11,7 @@ pom.xml.asc
 .hg/
 /out
 /log
+/resources/public/js/compiled
 
 *.swp
 *~

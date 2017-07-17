@@ -67,3 +67,33 @@
 (defn stop [this]
   ;;;(a/close! this ch-recv)
   (assoc this :senteobjs nil))
+
+(defn post-fn [{:keys [senteobjs] :as this}]
+  (:ajax-post-fn senteobjs))
+
+(defn get-fn [{:keys [senteobjs] :as this}]
+  (:ajax-get-or-ws-handshake-fn senteobjs))
+
+
+
+(comment (do (require '[ring.middleware.keyword-params :refer [wrap-keyword-params]])
+             (require '[ring.middleware.params :refer [wrap-params]])
+             (require '[org.httpkit.server :refer [run-server]])
+
+             (def ws1 (-> (websocket-tunnel println) start))
+
+             (def ws1p (post-fn ws1))
+             (def ws1g (get-fn ws1))
+
+             (def app (-> (fn [{:keys [uri request-method] :as req}]
+                            (case [uri request-method]
+                              ["/chsk" :get]  (ws1g req)
+                              ["/chsk" :post] (ws1p req)))
+                          wrap-keyword-params
+                          wrap-params))
+
+             (def srv (run-server app {:port 5556})))
+
+         (def srv (srv))
+
+         )

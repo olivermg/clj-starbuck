@@ -21,7 +21,7 @@
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
   :dependencies [[org.clojure/clojure "1.8.0"]
-                 [org.clojure/clojurescript "1.9.293"]
+                 [org.clojure/clojurescript "1.9.562"]
                  [com.stuartsierra/component "0.3.1"]                  ;; system + component + lifecycle management
                  [org.clojure/core.async "0.2.395"]                    ;; async communication (channels)
                  [org.toomuchcode/clara-rules "0.11.1"]                ;; rule engine (forward chaining)
@@ -38,12 +38,15 @@
 
   :source-paths ["src/clj" "src/cljc"]
 
+  :clean-targets ^{:protect false} [:target-path :compile-path
+                                    "resources/public/js/compiled"]
+
   :cljsbuild {:builds
               [{:id "browser-dev"
-                :source-paths ["src/cljs"]
+                :source-paths ["src/cljs" "src/cljc"]
                 :figwheel true
-                :compiler {:output-to             "target/browser-dev/clj-starbuck.js"
-                           :output-dir            "target/browser-dev"
+                :compiler {:output-to             "resources/public/js/compiled/clj-starbuck.js"
+                           :output-dir            "resources/public/js/compiled"
                            :source-map-timestamp  true
                            :print-input-delimiter true
                            :output-wrapper        true
@@ -51,20 +54,21 @@
                            :pretty-print          true}}
 
                {:id "browser-min"
-                :source-paths ["src/cljs"]
-                :compiler {:output-to     "target/browser-min/clj-starbuck.js"
+                :source-paths ["src/cljs" "src/cljc"]
+                :compiler {:output-to     "resources/public/js/compiled/clj-starbuck.js"
                            :output-dir    "target/browser-min"
                            :optimizations :advanced
                            :pretty-print  false}}
 
                {:id "node"
-                :source-paths ["src/cljs"]
+                :source-paths ["src/cljs" "src/cljc"]
                 ;;; sync this with dev/repl.clj:
                 :compiler {:output-to     "target/node/clj-starbuck.js"
                            :output-dir    "target/node"
                            :target        :nodejs
                            :language-in   :ecmascript5
                            :optimizations :none
+                           ;;;:verbose       true
                            :main          ow.starbuck.message-router
                            }}]}
 

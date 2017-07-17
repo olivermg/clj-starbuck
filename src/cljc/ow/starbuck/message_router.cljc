@@ -1,5 +1,5 @@
 (ns ow.starbuck.message-router
-  ?#(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
+  #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
   (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
             #?(:clj  [clojure.core.async.impl.protocols :as ap]
                :cljs [cljs.core.async.impl.protocols :as ap])

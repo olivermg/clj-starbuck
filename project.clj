@@ -27,7 +27,7 @@
                  [org.toomuchcode/clara-rules "0.11.1"]                ;; rule engine (forward chaining)
                  [com.taoensso/timbre "4.10.0"]                        ;; logging facility
                  [com.taoensso/sente "1.11.0"]                         ;; websockets/ajax communications
-                 [ring-core "1.6.2"]                                   ;; ring middlewares
+                 [ring/ring-core "1.4.0"]                              ;; ring middlewares
                  [http-kit "2.2.0"]                                    ;; http server for websockets/ajax communications
                  ]
 

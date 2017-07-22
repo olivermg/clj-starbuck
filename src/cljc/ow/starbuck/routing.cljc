@@ -1,4 +1,4 @@
-(ns ow.starbuck.message-router
+(ns ow.starbuck.routing
   #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
   (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
             #?(:clj  [clojure.core.async.impl.protocols :as ap]
@@ -71,7 +71,7 @@
            :evmsgs []}
           eventhandlers))
 
-(defn advance [{:keys [ruleset] :as router} msg]
+(defn advance [{:keys [ruleset] :as config} msg]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
   (debug "routing starting with" (printable-msg msg))
   (if (< (::transition-count msg) 100)
@@ -92,18 +92,18 @@
     (do (warn "dropping message due to high transition-count")
         [])))
 
-(defn- get-component-unit [{:keys [ruleset] :as router} component]
+(defn- get-component-unit [{:keys [ruleset] :as config} component]
   (-> (:units ruleset)
       owc/map-invert-coll
       (get component)))
 
-(defn- get-tunnel [{:keys [unit] :as router} component]
+(defn- get-tunnel [{:keys [unit] :as config} component]
   (and unit
-       (let [cunit (get-component-unit router component)]
+       (let [cunit (get-component-unit config component)]
          (and (not= unit cunit)
               cunit))))
 
-(defn- dispatch-tunnel [{:keys [components] :as router} tunnel msg]
+(defn- dispatch-tunnel [{:keys [components] :as config} tunnel msg]
   (let [tunnel-comp (get-in components [:tunnels tunnel])
         msg (update msg ::component pop)]
     (cond (fn? tunnel-comp)                   (tunnel-comp msg)
@@ -113,7 +113,7 @@
                                                  :tunnel-comp tunnel-comp
                                                  :msg msg})))))
 
-(defn- dispatch-component [{:keys [components] :as router} component msg]
+(defn- dispatch-component [{:keys [components] :as config} component msg]
   (let [comp (or (get-in components [:components component])
                  (get-in components [:components :DEFAULT]))]
     (cond (fn? comp)                    (comp msg)
@@ -123,16 +123,16 @@
                                                     :comp comp
                                                     :msg msg})))))
 
-(defn dispatch [router msg]
+(defn dispatch [config msg]
   (when-let [component (peek (::component msg))]
-    (if-let [tunnel (get-tunnel router component)]
-      (dispatch-tunnel router tunnel msg)
-      (dispatch-component router component msg))))
+    (if-let [tunnel (get-tunnel config component)]
+      (dispatch-tunnel config tunnel msg)
+      (dispatch-component config component msg))))
 
-(defn route [{:keys [dispatch?] :as router} msg]
-  (let [resmsgs (advance router msg)]
+(defn route [{:keys [dispatch?] :as config} msg]
+  (let [resmsgs (advance config msg)]
     (if dispatch?
-      (doall (map (partial dispatch router) resmsgs))
+      (doall (map (partial dispatch config) resmsgs))
       resmsgs)))
 
 (defn message [route map & {:keys [max-transitions]
@@ -144,7 +144,7 @@
          ::transition-count 0
          ::max-transitions max-transitions))
 
-(defn make-router [ruleset components & {:keys [unit dispatch?]
+(defn make-config [ruleset components & {:keys [unit dispatch?]
                                          :or {dispatch? true}}]
   {:unit unit
    :components components
@@ -197,31 +197,31 @@
                                             :DEFAULT #(doto % (println "(DEFAULT)"))}
                                :tunnels {:browser #(doto % (println "(server -> browser)"))}})
 
-      (def browser-router1 (make-router ruleset1 browser-components1 :unit :browser))
-      (def server-router1 (make-router ruleset1 server-components1 :unit :server)))
+      (def browser-config1 (make-config ruleset1 browser-components1 :unit :browser))
+      (def server-config1 (make-config ruleset1 server-components1 :unit :server)))
 
   (->> (message :book-flight {:foo :bar})
-       (route browser-router1)
+       (route browser-config1)
        first
-       (route browser-router1)
+       (route browser-config1)
        first
-       (route browser-router1)
+       (route browser-config1)
        first
-       (route server-router1)
+       (route server-config1)
        first
-       (route server-router1)
+       (route server-config1)
        first
-       (route server-router1))
+       (route server-config1))
 
 
   ;;; via core.async
 
   (do (def browser-comp-ch     (a/chan))
-      (def browser-comp-ch-pub (a/pub browser-comp-ch #(peek (:ow.starbuck.message-router/component %))))
+      (def browser-comp-ch-pub (a/pub browser-comp-ch #(peek (:ow.starbuck.routing/component %))))
       (def browser-router-ch   (a/chan))
 
       (def server-comp-ch     (a/chan))
-      (def server-comp-ch-pub (a/pub server-comp-ch #(peek (:ow.starbuck.message-router/component %))))
+      (def server-comp-ch-pub (a/pub server-comp-ch #(peek (:ow.starbuck.routing/component %))))
       (def server-router-ch   (a/chan))
 
       (def browser-components2 {:components {:input-validator browser-comp-ch
@@ -237,8 +237,8 @@
                                :tunnels {:browser #(do (println % "(server -> browser)")
                                                        (a/put! browser-router-ch %))}})
 
-      (def browser-router2 (make-router ruleset1 browser-components2 :unit :browser))
-      (def server-router2 (make-router ruleset1 server-components2 :unit :server))
+      (def browser-config2 (make-config ruleset1 browser-components2 :unit :browser))
+      (def server-config2 (make-config ruleset1 server-components2 :unit :server))
 
       (defn start-async-component [comp-kw input-pub output-ch]
         (let [sub-ch (a/sub input-pub comp-kw (a/chan))
@@ -250,13 +250,13 @@
               (a/put! output-ch (update msg :visited-components #(conj % [comp-kw (java.util.Date.)])))
               (recur (a/alts! [sub-ch (a/timeout timeout)]))))))
 
-      (defn start-async-router [router router-kw input-ch output-ch]
+      (defn start-async-router [config router-kw input-ch output-ch]
         (let [timeout (+ 20000 (rand-int 2000))]
           (go-loop [[msg _] (a/alts! [input-ch (a/timeout timeout)])]
             (println "got router msg in" router-kw "-" msg "on thread" (-> Thread .currentThread .getId))
             (when msg
               (Thread/sleep 1000)
-              (route router msg)
+              (route config msg)
               (recur (a/alts! [input-ch (a/timeout timeout)])))))))
 
   (do (doseq [c #{:input-validator :input-sanitizer}]
@@ -265,11 +265,11 @@
       (doseq [c #{:auth-checker :booker :invoice-generator :notifier}]
         (start-async-component c server-comp-ch-pub server-router-ch))
 
-      (start-async-router browser-router2 :browser browser-router-ch browser-comp-ch)
-      (start-async-router server-router2 :server server-router-ch server-comp-ch))
+      (start-async-router browser-config2 :browser browser-router-ch browser-comp-ch)
+      (start-async-router server-config2 :server server-router-ch server-comp-ch))
 
   (->> (message :book-flight {:foo :bar})
-       #_(route browser-router2)    ;; you can start like this
+       #_(route browser-config2)    ;; you can start like this
        (a/put! browser-router-ch) ;; or this
        )
 

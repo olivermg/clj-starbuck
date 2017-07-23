@@ -13,28 +13,28 @@
   p/Component
 
   (process [this msg]
-    ;;; to prevent go-loop from aborting due to exception in routing logic:
-    (try
-      (r/advance config msg)
-      (catch Exception e
-        (println "EXCEPTION (ROUTER ASYNC):" e))
-      (catch Error e
-        (println "ERROR (ROUTER ASYNC):" e))))
-
-  (answer [this resmsg]
-    (r/dispatch config resmsg)))
+    (a/put! ch msg)))
 
 (defn router [config ch]
   (map->RouterAsync {:config config
                      :ch ch
                      :ctrl-ch (a/chan)}))
 
-(defn start [{:keys [ch ctrl-ch] :as this}]
+(defn- safe-advance [config msg]
+  ;;; to prevent go-loop from aborting due to exception in routing logic:
+  (try
+    (r/advance config msg)
+    (catch Exception e
+      (println "EXCEPTION (ROUTER ASYNC):" e))
+    (catch Error e
+      (println "ERROR (ROUTER ASYNC):" e))))
+
+(defn start [{:keys [config ch ctrl-ch] :as this}]
   (go-loop [[msg msg-ch] (a/alts! [ch ctrl-ch])]
     (when-not (or (nil? msg)
                   (= msg-ch ctrl-ch))
-      (doseq [resmsg (p/process this msg)]
-        (p/answer this resmsg))
+      (doseq [resmsg (safe-advance config msg)]
+        (r/dispatch config resmsg))
       (recur (a/alts! [ch ctrl-ch]))))
   this)
 

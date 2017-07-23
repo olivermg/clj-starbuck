@@ -1,14 +1,7 @@
 (ns ow.starbuck.routing
-  #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
   (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
-            #?(:clj  [clojure.core.async.impl.protocols :as ap]
-               :cljs [cljs.core.async.impl.protocols :as ap])
-            #?(:clj  [clojure.core.async :refer [go-loop] :as a]
-               :cljs [cljs.core.async :as a])
             [ow.clojure :as owc]
-            [ow.starbuck.protocols :as p]
-            #_[ow.starbuck.core :refer [defcomponentrecord] :as oc]
-            ))
+            [ow.starbuck.protocols :as p]))
 
 (defn- printable-msg [msg]
   (select-keys msg #{::route ::component ::transition-count ::max-transitions}))
@@ -104,24 +97,14 @@
               cunit))))
 
 (defn- dispatch-tunnel [{:keys [components] :as config} tunnel msg]
-  (let [tunnel-comp (get-in components [:tunnels tunnel])
+  (let [tunnel-comp ^p/Tunnel (get-in components [:tunnels tunnel])
         msg (update msg ::component pop)]
-    (cond (fn? tunnel-comp)                   (tunnel-comp msg)
-          (satisfies? ap/Channel tunnel-comp) (a/put! tunnel-comp msg)
-          (satisfies? p/Tunnel tunnel-comp)   (p/send tunnel-comp msg)
-          true (throw (ex-info "invalid tunnel" {:tunnel tunnel
-                                                 :tunnel-comp tunnel-comp
-                                                 :msg msg})))))
+    (p/send tunnel-comp msg)))
 
 (defn- dispatch-component [{:keys [components] :as config} component msg]
-  (let [comp (or (get-in components [:components component])
-                 (get-in components [:components :DEFAULT]))]
-    (cond (fn? comp)                    (comp msg)
-          (satisfies? ap/Channel comp)  (a/put! comp msg)
-          (satisfies? p/Component comp) (p/process comp msg)
-          true (throw (ex-info "invalid component" {:component component
-                                                    :comp comp
-                                                    :msg msg})))))
+  (let [comp ^p/Component (or (get-in components [:components component])
+                              (get-in components [:components :DEFAULT]))]
+    (p/process comp msg)))
 
 (defn dispatch [config msg]
   (when-let [component (peek (::component msg))]
@@ -129,11 +112,18 @@
       (dispatch-tunnel config tunnel msg)
       (dispatch-component config component msg))))
 
-(defn route [{:keys [dispatch?] :as config} msg]
-  (let [resmsgs (advance config msg)]
-    (if dispatch?
-      (doall (map (partial dispatch config) resmsgs))
-      resmsgs)))
+#_(defn route [config msg]
+  (doall (map (partial dispatch config)
+              (advance config msg))))
+
+#_(defn route [config msg]
+  (try
+    (route* config msg)
+    (catch Exception e
+      (println "EXCEPTION (ROUTER):" e))
+    (catch Error e
+      (println "ERROR (ROUTER):" e))))
+
 
 (defn message [route map & {:keys [max-transitions]
                             :or {max-transitions 100}}]
@@ -144,24 +134,10 @@
          ::transition-count 0
          ::max-transitions max-transitions))
 
-(defn make-config [ruleset components & {:keys [unit dispatch?]
-                                         :or {dispatch? true}}]
+(defn make-config [ruleset components & {:keys [unit]}]
   {:unit unit
    :components components
-   :ruleset ruleset
-   :dispatch? dispatch?})
-
-
-#_(defn- process [this req]
-  (advance req (:ruleset this)))
-
-#_(defcomponentrecord MessageRouter)
-
-#_(defn new-comp [ch-in ch-out ruleset]
-  (map->MessageRouter {:processfn process
-                       :ch-in ch-in
-                       :ch-out ch-out
-                       :ruleset ruleset}))
+   :ruleset ruleset})
 
 
 

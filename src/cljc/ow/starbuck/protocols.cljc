@@ -2,7 +2,8 @@
   (:refer-clojure :rename {send send-clj}))
 
 (defprotocol Component
-  (process [this msg]))
+  (process [this msg])
+  (answer [this resmsg]))
 
 (defprotocol Tunnel
   (send [this msg]))

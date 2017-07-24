@@ -101,7 +101,7 @@
       (def server-router-ch   (a/chan))
 
       (defn start-async-component [comp-kw input-pub output-ch]
-        (-> (ca/component comp-kw input-pub output-ch
+        (-> (ca/component (a/sub input-pub comp-kw (a/chan)) output-ch
                           (fn [msg]
                             (println "got component msg in" comp-kw "-" msg
                                      "on thread" (.getId (Thread/currentThread)))

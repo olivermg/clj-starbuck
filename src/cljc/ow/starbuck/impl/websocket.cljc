@@ -1,4 +1,4 @@
-(ns ow.starbuck.tunnels.websocket
+(ns ow.starbuck.impl.websocket
   #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
   (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
             #?(:clj  [clojure.core.async :refer [go-loop] :as a]
@@ -42,21 +42,21 @@
         (do (debug "channel not open yet, delaying:" msg)
             (recur (a/<! (a/timeout 500))))))))
 
-(defrecord WebsocketTunnel [recv-fn    ;; server & client
-                            path       ;; client
-                            userid-fn  ;; server
-                            senteobjs  ;; start/stop
-                            ]
+(defrecord ComponentWebsocket [recv-fn    ;; server & client
+                               path       ;; client
+                               userid-fn  ;; server
+                               senteobjs  ;; start/stop
+                               ]
 
-  p/Tunnel
+  p/Component
 
-  (send [this msg]
+  (deliver [this msg]
     (do-send this msg)))
 
-(defn websocket-tunnel [recv-fn & {:keys [path userid-fn]}]
-  (map->WebsocketTunnel {:recv-fn recv-fn
-                         :path path
-                         :userid-fn userid-fn}))
+(defn tunnel [recv-fn & {:keys [path userid-fn]}]
+  (map->ComponentWebsocket {:recv-fn recv-fn
+                            :path path
+                            :userid-fn userid-fn}))
 
 (defn start [this]
   (let [this (assoc this

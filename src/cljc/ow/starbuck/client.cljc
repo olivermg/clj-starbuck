@@ -19,10 +19,10 @@
          :ow.starbuck.routing/transition-count 0
          :ow.starbuck.routing/max-transitions max-transitions))
 
-(defn process-message [router-ch msg]
+#_(defn process-message [router-ch msg]
   (a/put! router-ch msg))
 
-(defn process-message-sync [router-ch components-pub listen-kw response-fn msg & {:keys [timeout]}]
+#_(defn process-message-sync [router-ch components-pub listen-kw response-fn msg & {:keys [timeout]}]
   (let [req-id (rand-int Integer/MAX_VALUE)
         msg (assoc msg ::request-id req-id)
         subch (a/chan)
@@ -91,39 +91,42 @@
   (do (require '[ow.starbuck.components.core-async :as ca])
       (require '[ow.starbuck.routers.core-async :as ra])
       (require '[ow.starbuck.tunnels.core-async :as ta])
+      (require '[ow.starbuck.impl.core-async :as ica])
 
       (def browser-comp-ch     (a/chan))
-      (def browser-comp-ch-pub (a/pub browser-comp-ch #(peek (:ow.starbuck.routing/component %))))
+      (def browser-comp-ch-pub (ica/component-pub browser-comp-ch))
       (def browser-router-ch   (a/chan))
 
       (def server-comp-ch     (a/chan))
-      (def server-comp-ch-pub (a/pub server-comp-ch #(peek (:ow.starbuck.routing/component %))))
+      (def server-comp-ch-pub (ica/component-pub server-comp-ch))
       (def server-router-ch   (a/chan))
 
       (defn start-async-component [comp-kw input-pub output-ch]
-        (-> (ca/component (a/sub input-pub comp-kw (a/chan)) output-ch
-                          (fn [msg]
-                            (println "got component msg in" comp-kw "-" msg
-                                     "on thread" (.getId (Thread/currentThread)))
-                            (Thread/sleep (rand-int 2000))
-                            (update msg :visited-components #(conj % comp-kw))))
-            (ca/start)))
+        (-> (ica/component (a/sub input-pub comp-kw (a/chan)) output-ch
+                           (fn [this msg]
+                             (println "got component msg in" comp-kw "-" msg
+                                      "on thread" (.getId (Thread/currentThread)))
+                             (Thread/sleep (rand-int 2000))
+                             (update msg :visited-components #(conj % comp-kw))))
+            (ica/start)))
 
       (defn start-async-router [config input-ch]
-        (-> (ra/router config input-ch)
-            (ra/start)))
+        (-> (ica/router config input-ch)
+            (ica/start)))
+
+      (defn start-async-tunnel [output-ch]
+        (-> (ica/tunnel output-ch)
+            (ica/start)))
 
       (def browser-components2 {:components {:input-validator (start-async-component :input-validator browser-comp-ch-pub browser-router-ch)
                                              :input-sanitizer (start-async-component :input-sanitizer browser-comp-ch-pub browser-router-ch)}
-                                :tunnels {:server (ta/tunnel server-router-ch)}})
+                                :tunnels {:server (start-async-tunnel server-router-ch)}})
 
       (def server-components2 {:components {:auth-checker (start-async-component :auth-checker server-comp-ch-pub server-router-ch)
                                             :booker (start-async-component :booker server-comp-ch-pub server-router-ch)
                                             :invoice-generator (start-async-component :invoice-generator server-comp-ch-pub server-router-ch)
-                                            :notifier (start-async-component :invoice-generator server-comp-ch-pub server-router-ch)
-                                            ;;;:DEFAULT server-comp-ch
-                                            }
-                               :tunnels {:browser (ta/tunnel browser-router-ch)}})
+                                            :notifier (start-async-component :invoice-generator server-comp-ch-pub server-router-ch)}
+                               :tunnels {:browser (start-async-tunnel browser-router-ch)}})
 
       (def browser-config2 (config ruleset1 browser-components2 :unit :browser))
       (def server-config2 (config ruleset1 server-components2 :unit :server)))
@@ -138,8 +141,6 @@
       (start-async-router server-config2 server-router-ch))
 
   (->> (message :book-flight {:foo :bar})
-       #_(route browser-config2)    ;; you can start like this
-       (a/put! browser-router-ch) ;; or this
-       )
+       (a/put! browser-router-ch))
 
   )

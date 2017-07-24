@@ -1,8 +1,5 @@
 (ns ow.starbuck.protocols
-  (:refer-clojure :rename {send send-clj}))
+  (:refer-clojure :rename {deliver deliver-clj}))
 
 (defprotocol Component
-  (process [this msg]))
-
-(defprotocol Tunnel
-  (send [this msg]))
+  (deliver [this msg]))

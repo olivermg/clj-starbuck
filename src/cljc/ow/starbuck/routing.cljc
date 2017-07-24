@@ -97,29 +97,9 @@
          (and (not= unit cunit)
               cunit))))
 
-(defn- dispatch-tunnel [{:keys [components] :as config} tunnel msg]
-  (let [tunnel-comp ^p/Tunnel (get-in components [:tunnels tunnel])
-        msg (update msg ::component pop)]
-    (p/send tunnel-comp msg)))
-
-(defn- dispatch-component [{:keys [components] :as config} component msg]
-  (let [comp ^p/Component (get-in components [:components component])]
-    (p/process comp msg)))
-
-(defn dispatch [config msg]
+(defn get-next-component [{:keys [components] :as config} msg]
   (when-let [component (peek (::component msg))]
-    (if-let [tunnel (get-tunnel config component)]
-      (dispatch-tunnel config tunnel msg)
-      (dispatch-component config component msg))))
-
-#_(defn route [config msg]
-  (doall (map (partial dispatch config)
-              (advance config msg))))
-
-#_(defn route [config msg]
-  (try
-    (route* config msg)
-    (catch Exception e
-      (println "EXCEPTION (ROUTER):" e))
-    (catch Error e
-      (println "ERROR (ROUTER):" e))))
+    (let [tunnel (get-tunnel config component)]
+      (get-in components (if tunnel
+                           [:tunnels tunnel]
+                           [:components component])))))

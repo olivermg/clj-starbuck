@@ -125,21 +125,6 @@
       (println "ERROR (ROUTER):" e))))
 
 
-(defn message [route map & {:keys [max-transitions]
-                            :or {max-transitions 100}}]
-  "Creates a new routable message."
-  (assoc map
-         ::route route
-         ::component '()
-         ::transition-count 0
-         ::max-transitions max-transitions))
-
-(defn make-config [ruleset components & {:keys [unit]}]
-  {:unit unit
-   :components components
-   :ruleset ruleset})
-
-
 
 (comment
 

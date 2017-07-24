@@ -105,6 +105,7 @@
                           (fn [msg]
                             (println "got component msg in" comp-kw "-" msg
                                      "on thread" (.getId (Thread/currentThread)))
+                            (Thread/sleep (rand-int 2000))
                             (update msg :visited-components #(conj % comp-kw))))
             (ca/start)))
 

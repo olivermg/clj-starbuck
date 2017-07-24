@@ -28,7 +28,6 @@
 
 (defn start [{:keys [config ch ctrl-ch] :as this}]
   (go-loop [[msg msg-ch] (a/alts! [ch ctrl-ch])]
-    (println "FFFFFFFFFFFFFF" msg)
     (when-not (or (nil? msg)
                   (= msg-ch ctrl-ch))
       (doseq [resmsg (safe-advance config msg)]

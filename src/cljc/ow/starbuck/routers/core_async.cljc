@@ -1,10 +1,7 @@
 (ns ow.starbuck.routers.core-async
   #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
-  (:require #?(:clj  [clojure.core.async.impl.protocols :as ap]
-               :cljs [cljs.core.async.impl.protocols :as ap])
-            #?(:clj  [clojure.core.async :refer [go-loop] :as a]
+  (:require #?(:clj  [clojure.core.async :refer [go-loop] :as a]
                :cljs [cljs.core.async :as a])
-            [ow.clojure :as owc]
             [ow.starbuck.protocols :as p]
             [ow.starbuck.routing :as r]))
 
@@ -31,6 +28,7 @@
 
 (defn start [{:keys [config ch ctrl-ch] :as this}]
   (go-loop [[msg msg-ch] (a/alts! [ch ctrl-ch])]
+    (println "FFFFFFFFFFFFFF" msg)
     (when-not (or (nil? msg)
                   (= msg-ch ctrl-ch))
       (doseq [resmsg (safe-advance config msg)]

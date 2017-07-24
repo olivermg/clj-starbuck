@@ -67,7 +67,8 @@
 (defn advance [{:keys [ruleset] :as config} msg]
   "Takes a message, runs it against ruleset and returns a sequence of routed messages."
   (debug "routing starting with" (printable-msg msg))
-  (if (< (::transition-count msg) 100)
+  (if (or (not (::transition-count msg))
+          (< (::transition-count msg) 100))
     (let [route (get-in ruleset [:routes (::route msg)])
           trans (get-in route [:transitions (peek (::component msg))])
           transs (if (sequential? trans)
@@ -102,8 +103,7 @@
     (p/send tunnel-comp msg)))
 
 (defn- dispatch-component [{:keys [components] :as config} component msg]
-  (let [comp ^p/Component (or (get-in components [:components component])
-                              (get-in components [:components :DEFAULT]))]
+  (let [comp ^p/Component (get-in components [:components component])]
     (p/process comp msg)))
 
 (defn dispatch [config msg]

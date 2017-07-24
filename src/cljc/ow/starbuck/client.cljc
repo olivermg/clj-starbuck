@@ -15,7 +15,7 @@
          ::transition-count 0
          ::max-transitions max-transitions))
 
-(defn make-config [ruleset components & {:keys [unit]}]
+(defn config [ruleset components & {:keys [unit]}]
   {:unit unit
    :components components
    :ruleset ruleset})

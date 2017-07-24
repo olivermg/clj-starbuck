@@ -1,4 +1,4 @@
-(ns ow.starbuck.component-async
+(ns ow.starbuck.components.core-async
   #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
   (:require #?(:clj  [clojure.core.async.impl.protocols :as ap]
                :cljs [cljs.core.async.impl.protocols :as ap])
@@ -7,7 +7,7 @@
             [ow.clojure :as owc]
             [ow.starbuck.protocols :as p]))
 
-(defrecord ComponentAsync [name in-ch out-ch process-fn ctrl-ch]
+(defrecord ComponentCoreAsync [name in-ch out-ch process-fn ctrl-ch]
 
   p/Component
 
@@ -15,11 +15,11 @@
     (a/put! in-ch msg)))
 
 (defn component [name in-ch out-ch process-fn]
-  (map->ComponentAsync {:name name
-                        :in-ch in-ch
-                        :out-ch out-ch
-                        :process-fn process-fn
-                        :ctrl-ch (a/chan)}))
+  (map->ComponentCoreAsync {:name name
+                            :in-ch in-ch
+                            :out-ch out-ch
+                            :process-fn process-fn
+                            :ctrl-ch (a/chan)}))
 
 (defn- safe-process [process-fn msg]
   ;;; to prevent go-loop from aborting due to exception in process-fn:

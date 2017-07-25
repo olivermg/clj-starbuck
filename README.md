@@ -50,12 +50,12 @@ clj-starbuck helps you to...
                       (assoc msg :booked? true))))
 
    (def invoice-generator
-     (ica/silent-component "invoice-generator"
-                           (ica/component-sub component-pub :invoice-generator)
-                           router-ch
-                           (fn [this msg]
-                             (println "invoice generated")
-                             msg)))
+     (ica/component "invoice-generator"
+                    (ica/component-sub component-pub :invoice-generator)
+                    router-ch
+                    (fn [this msg]
+                      (println "invoice generated")
+                      msg)))
    ```
 
 4. Build config for Router:
@@ -84,7 +84,8 @@ clj-starbuck helps you to...
 You now have a router waiting for incoming messages on `router-ch`. It will use `config` to determine the next
 component for a message and put it onto `component-ch`. The corresponding component will receive the message
 via its own subscription channel created via `component-sub`. After the component is done with the message,
-it will be put onto `router-ch` again and the process starts again for as long as there is a next component.
+it will be put onto `router-ch` again and the process starts again for as long as there is a next component
+defined.
 
 ### Usage
 

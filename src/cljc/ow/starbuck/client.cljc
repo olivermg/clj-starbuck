@@ -40,8 +40,8 @@
 (comment
 
   (def ruleset1
-    {:units {:browser #{:input-validator :input-sanitizer}
-             :server #{:auth-checker :booker :invoice-generator :notifier}}
+    {:units {:browser #{:input-validator :input-sanitizer :browser-result}
+             :server  #{:auth-checker :booker :invoice-generator :notifier :server-result}}
 
      :routes {:book-flight
               {:transitions {nil :input-validator
@@ -53,7 +53,9 @@
                              :auth-checker {:transform (fn [msg] (assoc msg :check #{:username :token}))
                                             :next :booker}
 
-                             :booker {:next [:invoice-generator (fn [msg] :notifier)]}}}}})
+                             :booker {:next [:invoice-generator
+                                             (fn [msg] :notifier)
+                                             :browser-result]}}}}})
 
 
   ;;; via fns
@@ -89,58 +91,79 @@
   ;;; via core.async
 
   (do (require '[ow.starbuck.impl.core-async :as ica])
-      #_(require '[ow.starbuck.impl.websocket :as iws])
 
       (def browser-comp-ch     (a/chan))
       (def browser-comp-ch-pub (ica/component-pub browser-comp-ch))
       (def browser-router-ch   (a/chan))
+      (def browser-result-ch   (a/chan))
+      (def browser-result-pub  (ica/result-pub browser-result-ch))
 
       (def server-comp-ch     (a/chan))
       (def server-comp-ch-pub (ica/component-pub server-comp-ch))
       (def server-router-ch   (a/chan))
+      (def server-result-ch   (a/chan))
+      (def server-result-pub  (ica/result-pub server-result-ch))
 
-      (defn start-async-component [comp-kw input-pub output-ch]
-        (-> (ica/component (name comp-kw)
-                           (a/sub input-pub comp-kw (a/chan))
+      (defn start-async-component [unit comp-kw input-pub output-ch]
+        (-> (ica/component (str (name unit) "." (name comp-kw))
+                           (ica/component-sub input-pub comp-kw)
                            output-ch
                            (fn [this msg]
-                             (println "got component msg in" comp-kw "-" msg
-                                      "on thread" (.getId (Thread/currentThread)))
                              (Thread/sleep (rand-int 2000))
                              (update msg :visited-components #(conj % comp-kw))))
             (ica/start)))
 
-      (defn start-async-router [config input-ch]
-        (-> (ica/router config input-ch)
+      (defn start-async-silent-component [unit comp-kw input-pub]
+        (-> (ica/silent-component (str (name unit) "." (name comp-kw))
+                                  (ica/component-sub input-pub comp-kw)
+                                  (fn [this msg]
+                                    (Thread/sleep (rand-int 2000))
+                                    (update msg :visited-components #(conj % comp-kw))))
             (ica/start)))
 
-      (defn start-async-tunnel [output-ch]
-        (-> (ica/tunnel output-ch)
+      (defn start-async-echo-component [unit comp-kw input-pub output-ch]
+        (-> (ica/echo-component (str (name unit) "." (name comp-kw))
+                                (ica/component-sub input-pub comp-kw)
+                                output-ch)
             (ica/start)))
 
-      (def browser-components2 {:components {:input-validator (start-async-component :input-validator browser-comp-ch-pub browser-router-ch)
-                                             :input-sanitizer (start-async-component :input-sanitizer browser-comp-ch-pub browser-router-ch)}
-                                :tunnels {:server (start-async-tunnel server-router-ch)}})
+      (defn start-async-router [config input-ch result-ch]
+        (-> (ica/router config input-ch :result-ch result-ch :name (str (name (:unit config)) " router"))
+            (ica/start)))
 
-      (def server-components2 {:components {:auth-checker (start-async-component :auth-checker server-comp-ch-pub server-router-ch)
-                                            :booker (start-async-component :booker server-comp-ch-pub server-router-ch)
-                                            :invoice-generator (start-async-component :invoice-generator server-comp-ch-pub server-router-ch)
-                                            :notifier (start-async-component :notifier server-comp-ch-pub server-router-ch)}
-                               :tunnels {:browser (start-async-tunnel browser-router-ch)}})
+      (defn start-async-tunnel [name output-ch]
+        (-> (ica/tunnel output-ch :name name)
+            (ica/start)))
+
+      (def browser-components2 {:components {:input-validator (start-async-component :brw :input-validator browser-comp-ch-pub browser-router-ch)
+                                             :input-sanitizer (start-async-component :brw :input-sanitizer browser-comp-ch-pub browser-router-ch)
+                                             :browser-result  (start-async-echo-component :brw :browser-result browser-comp-ch-pub browser-result-ch)}
+                                :tunnels {:server (start-async-tunnel "browser->server" server-router-ch)}})
+
+      (def server-components2 {:components {:auth-checker      (start-async-component :srv :auth-checker server-comp-ch-pub server-router-ch)
+                                            :booker            (start-async-component :srv :booker server-comp-ch-pub server-router-ch)
+                                            :invoice-generator (start-async-silent-component :srv :invoice-generator server-comp-ch-pub)
+                                            :notifier          (start-async-silent-component :srv :notifier server-comp-ch-pub)
+                                            :server-result     (start-async-echo-component :srv :server-result server-comp-ch-pub server-result-ch)}
+                               :tunnels {:browser (start-async-tunnel "server->browser" browser-router-ch)}})
 
       (def browser-config2 (config ruleset1 browser-components2 :unit :browser))
-      (def server-config2 (config ruleset1 server-components2 :unit :server)))
+      (def server-config2 (config ruleset1 server-components2 :unit :server))
 
-  (do (doseq [c #{:input-validator :input-sanitizer}]
-        (start-async-component c browser-comp-ch-pub browser-router-ch))
+      (def browser-result-ch (a/chan))
+      (def server-result-ch (a/chan))
 
-      (doseq [c #{:auth-checker :booker :invoice-generator :notifier}]
-        (start-async-component c server-comp-ch-pub server-router-ch))
+      (start-async-router browser-config2 browser-router-ch browser-result-ch)
+      (start-async-router server-config2 server-router-ch server-result-ch))
 
-      (start-async-router browser-config2 browser-router-ch)
-      (start-async-router server-config2 server-router-ch))
+  (do (->> (message :book-flight {:foo :bar1 :sync false} :max-transitions 20)
+           (ica/process-message browser-router-ch))
 
-  (->> (message :book-flight {:foo :bar})
-       (a/put! browser-router-ch))
+      (->> (message :book-flight {:foo :bar2 :sync false} :max-transitions 20)
+           (ica/process-message browser-router-ch))
+
+      (->> (message :book-flight {:foo :baz1 :sync true} :max-transitions 20)
+           (ica/process-message-sync browser-router-ch browser-result-pub))
+      )
 
   )

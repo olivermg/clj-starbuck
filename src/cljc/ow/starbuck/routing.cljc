@@ -4,7 +4,7 @@
             [ow.starbuck.protocols :as p]))
 
 (defn printable-msg [msg]
-  (select-keys msg #{::route ::component ::transition-count ::max-transitions}))
+  (select-keys msg #{::route ::component}))
 
 (defn- inc-transition-count [msg]
   (update msg ::transition-count
@@ -36,8 +36,8 @@
               msgs)
          (apply concat)
          (remove #(nil? (peek (::component %)))))
-    (do (warn "next component undefined in transition" {:transition transition
-                                                        :msgs (mapv printable-msg msgs)})
+    (do (debug "next component undefined in transition" {:transition transition
+                                                         :msgs (mapv printable-msg msgs)})
         [])))
 
 (defn- goto-next-and-transform [transitions msgs]
@@ -57,8 +57,8 @@
                   (-> (update s :abort? #(or % (:abort? eventhandler)))
                       (update :evmsgs #(concat % evmsgs))))
                 s)
-              (do (warn "next component undefined in eventhandler" {:eventhandler eventhandler
-                                                                    :msg (printable-msg msg)})
+              (do (debug "next component undefined in eventhandler" {:eventhandler eventhandler
+                                                                     :msg (printable-msg msg)})
                   s)))
           {:abort? nil
            :evmsgs []}

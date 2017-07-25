@@ -29,7 +29,7 @@
     (when-not (or (nil? msg)
                   (and (= msg-ch ctrl-ch)
                        (= msg ::stop)))
-      (debug name "got message:" (r/printable-msg msg))
+      (debug name "got message:" msg #_(r/printable-msg msg))
       (->> (safe-call name process-fn this msg)
            (deliver-result-fn this))
       (debug name "delivered result")
@@ -53,22 +53,51 @@
               (fn [this resmsg]
                 (a/put! out-ch resmsg))))
 
-(defn router [config in-ch]
-  (component* "router" in-ch
+(defn echo-component [name in-ch out-ch]
+  (component name in-ch out-ch
+             (fn [this msg] msg)))
+
+(defn silent-component [name in-ch process-fn]
+  (component* name in-ch process-fn
+              (constantly nil)))
+
+(defn router [config in-ch & {:keys [name]
+                              :or {name "router"}}]
+  (component* name in-ch
               (fn [{:keys [config] :as this} msg]
-                (r/advance config msg))
+                (if-not (::tunneled? msg)
+                  (r/advance config msg)
+                  [(dissoc msg ::tunneled?)]))
               (fn [{:keys [config] :as this} resmsgs]
                 (doseq [rm resmsgs]
                   (-> (r/get-next-component config rm)
                       (p/deliver rm))))
               :config config))
 
-(defn tunnel [out-ch]
-  (component* "tunnel" (a/chan)
+(defn tunnel [out-ch & {:keys [name]
+                        :or {name "tunnel"}}]
+  (component* name (a/chan)
               (fn [this msg]
-                (update msg :ow.starbuck.routing/component pop))
+                (assoc msg ::tunneled? true))
               (fn [this resmsg]
                 (a/put! out-ch resmsg))))
 
 (defn component-pub [ch]
   (a/pub ch #(peek (:ow.starbuck.routing/component %))))
+
+(defn component-sub [component-pub kw]
+  (a/sub component-pub kw (a/chan)))
+
+(defn result-pub [result-ch]
+  (a/pub result-ch ::request-id))
+
+(defn process-message [router-ch msg]
+  (a/put! router-ch msg))
+
+(defn process-message-sync [router-ch result-pub msg & {:keys [timeout]}]
+  (let [req-id (rand-int Integer/MAX_VALUE)
+        msg (assoc msg ::request-id req-id)]
+    (a/put! router-ch msg)
+    (let [rsub (a/sub result-pub req-id (a/promise-chan))
+          [resmsg ch] (a/alts!! [rsub (a/timeout (or timeout 20000))])]
+      (dissoc resmsg ::request-id))))

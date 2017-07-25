@@ -3,7 +3,7 @@
             [ow.clojure :as owc]
             [ow.starbuck.protocols :as p]))
 
-(defn- printable-msg [msg]
+(defn printable-msg [msg]
   (select-keys msg #{::route ::component ::transition-count ::max-transitions}))
 
 (defn- inc-transition-count [msg]

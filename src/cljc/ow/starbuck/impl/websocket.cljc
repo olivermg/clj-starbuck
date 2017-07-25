@@ -51,7 +51,7 @@
   p/Component
 
   (deliver [this msg]
-    (do-send this msg)))
+    (do-send this (update msg :ow.starbuck.routing/component pop))))
 
 (defn tunnel [recv-fn & {:keys [path userid-fn]}]
   (map->ComponentWebsocket {:recv-fn recv-fn

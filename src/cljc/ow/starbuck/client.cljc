@@ -88,10 +88,7 @@
 
   ;;; via core.async
 
-  (do (require '[ow.starbuck.components.core-async :as ca])
-      (require '[ow.starbuck.routers.core-async :as ra])
-      (require '[ow.starbuck.tunnels.core-async :as ta])
-      (require '[ow.starbuck.impl.core-async :as ica])
+  (do (require '[ow.starbuck.impl.core-async :as ica])
 
       (def browser-comp-ch     (a/chan))
       (def browser-comp-ch-pub (ica/component-pub browser-comp-ch))
@@ -102,7 +99,9 @@
       (def server-router-ch   (a/chan))
 
       (defn start-async-component [comp-kw input-pub output-ch]
-        (-> (ica/component (a/sub input-pub comp-kw (a/chan)) output-ch
+        (-> (ica/component (name comp-kw)
+                           (a/sub input-pub comp-kw (a/chan))
+                           output-ch
                            (fn [this msg]
                              (println "got component msg in" comp-kw "-" msg
                                       "on thread" (.getId (Thread/currentThread)))
@@ -125,7 +124,7 @@
       (def server-components2 {:components {:auth-checker (start-async-component :auth-checker server-comp-ch-pub server-router-ch)
                                             :booker (start-async-component :booker server-comp-ch-pub server-router-ch)
                                             :invoice-generator (start-async-component :invoice-generator server-comp-ch-pub server-router-ch)
-                                            :notifier (start-async-component :invoice-generator server-comp-ch-pub server-router-ch)}
+                                            :notifier (start-async-component :notifier server-comp-ch-pub server-router-ch)}
                                :tunnels {:browser (start-async-tunnel browser-router-ch)}})
 
       (def browser-config2 (config ruleset1 browser-components2 :unit :browser))

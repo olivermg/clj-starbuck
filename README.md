@@ -60,10 +60,12 @@ clj-starbuck helps you to...
 
 4. Build config for Router:
    ```clojure
+   (require '[ow.starbuck.client :as c])
+
    (def config
-     ruleset
-     {:components {:booker booker
-                   :invoice-generator invoice-generator}})
+     (c/config ruleset
+               {:components {:booker booker
+                             :invoice-generator invoice-generator}}))
    ```
 
 5. Create Router:
@@ -91,8 +93,8 @@ it will be put onto `router-ch` again and the process starts again for as long a
 You can create and send a message asynchronously:
 
 ``` clojure
-(let [msg (message :book-flight
-                   {:from :london :to :berlin})]
+(let [msg (c/message :book-flight
+                     {:from :london :to :berlin})]
   (a/put! router-ch msg))
 ```
 

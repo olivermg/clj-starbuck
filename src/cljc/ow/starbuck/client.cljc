@@ -89,6 +89,7 @@
   ;;; via core.async
 
   (do (require '[ow.starbuck.impl.core-async :as ica])
+      #_(require '[ow.starbuck.impl.websocket :as iws])
 
       (def browser-comp-ch     (a/chan))
       (def browser-comp-ch-pub (ica/component-pub browser-comp-ch))

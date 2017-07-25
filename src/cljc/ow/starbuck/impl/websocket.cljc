@@ -53,10 +53,13 @@
   (deliver [this msg]
     (do-send this (update msg :ow.starbuck.routing/component pop))))
 
-(defn tunnel [recv-fn & {:keys [path userid-fn]}]
-  (map->ComponentWebsocket {:recv-fn recv-fn
-                            :path path
-                            :userid-fn userid-fn}))
+;;; TODO: implement client for server side (not via sente, see factum project):
+#?(:clj  (defn tunnel [recv-fn userid-fn]
+           (map->ComponentWebsocket {:recv-fn recv-fn
+                                     :userid-fn userid-fn}))
+   :cljs (defn tunnel [recv-fn path]
+           (map->ComponentWebsocket {:recv-fn recv-fn
+                                     :path path})))
 
 (defn start [this]
   (let [this (assoc this

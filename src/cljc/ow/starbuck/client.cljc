@@ -19,22 +19,6 @@
          :ow.starbuck.routing/transition-count 0
          :ow.starbuck.routing/max-transitions max-transitions))
 
-#_(defn process-message [router-ch msg]
-  (a/put! router-ch msg))
-
-#_(defn process-message-sync [router-ch components-pub listen-kw response-fn msg & {:keys [timeout]}]
-  (let [req-id (rand-int Integer/MAX_VALUE)
-        msg (assoc msg ::request-id req-id)
-        subch (a/chan)
-        ch (-> components-pub
-               (a/sub listen-kw subch)
-               (a/pub ::request-id)
-               (a/sub req-id (a/promise-chan)))]
-    (go (let [[res _] (a/alts! [ch (a/timeout (or timeout 10000))])]
-          (a/close! subch)
-          (when-not (nil? res)
-            (response-fn res))))))
-
 
 
 (comment

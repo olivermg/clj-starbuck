@@ -17,11 +17,11 @@
            (sente/make-channel-socket! path
                                        {:wrap-recv-evs? false})))
 
-(defn- handle-inbound-sentemsg [{:keys [recv-fn] :as this} {:keys [id ?data] :as sentemsg}]
+(defn- handle-inbound-sentemsg [{:keys [recv-component] :as this} {:keys [id ?data] :as sentemsg}]
   (debug "got inbound message:" id ?data)
   ;;; TODO: add auth checking
   ;;; TODO: maybe add msg shaping
-  (recv-fn ?data))
+  (p/deliver recv-component ?data))
 
 (defn- start-inbound-msg-handler! [{:keys [senteobjs] :as this}]
   (let [ch-recv (:ch-recv senteobjs)]
@@ -42,10 +42,10 @@
         (do (debug "channel not open yet, delaying:" msg)
             (recur (a/<! (a/timeout 500))))))))
 
-(defrecord ComponentWebsocket [recv-fn    ;; server & client
-                               path       ;; client
-                               userid-fn  ;; server
-                               senteobjs  ;; start/stop
+(defrecord ComponentWebsocket [recv-component    ;; server & client
+                               path              ;; client
+                               userid-fn         ;; server
+                               senteobjs         ;; start/stop
                                ]
 
   p/Component
@@ -54,11 +54,11 @@
     (do-send this (update msg :ow.starbuck.routing/component pop))))
 
 ;;; TODO: implement client for server side (not via sente, see factum project):
-#?(:clj  (defn tunnel [recv-fn userid-fn]
-           (map->ComponentWebsocket {:recv-fn recv-fn
+#?(:clj  (defn tunnel [recv-component userid-fn]
+           (map->ComponentWebsocket {:recv-component recv-component
                                      :userid-fn userid-fn}))
-   :cljs (defn tunnel [recv-fn path]
-           (map->ComponentWebsocket {:recv-fn recv-fn
+   :cljs (defn tunnel [recv-component path]
+           (map->ComponentWebsocket {:recv-component recv-component
                                      :path path})))
 
 (defn start [this]

@@ -1,7 +1,7 @@
 (ns ow.starbuck.impl.core-async
-  #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop]]))
+  #?(:cljs (:require-macros [cljs.core.async.macros :refer [go-loop go]]))
   (:require [taoensso.timbre :refer [trace debug info warn error fatal]]
-            #?(:clj  [clojure.core.async :refer [go-loop] :as a]
+            #?(:clj  [clojure.core.async :refer [go-loop go] :as a]
                :cljs [cljs.core.async :as a])
             [ow.starbuck.protocols :as p]
             [ow.starbuck.routing :as r]))
@@ -16,26 +16,29 @@
   (deliver [this msg]
     (a/put! in-ch msg))
 
-  (deliver-sync [this msg]
-    (let [result-pub (or result-pub
-                         (throw (ex-info "no result-pub given, cannot deliver synchronously"
-                                         {:this this :msg msg})))
-          req-id (rand-int Integer/MAX_VALUE)
-          msg (assoc msg ::request-id req-id)
-          rsub (a/sub result-pub req-id (a/promise-chan))
-          _ (a/put! in-ch msg)
-          [resmsg ch] (a/alts!! [rsub (a/timeout (or timeout 30000))])]
-      (dissoc resmsg ::request-id))))
+  (deliver-sync
+    [this msg]
+    (go (let [result-pub (or result-pub
+                             (throw (ex-info "no result-pub given, cannot deliver synchronously"
+                                             {:this this :msg msg})))
+              req-id (rand-int 2100000000)
+              msg (assoc msg ::request-id req-id)
+              rsub (a/sub result-pub req-id (a/promise-chan))
+              _ (a/put! in-ch msg)
+              [resmsg ch] (a/alts! [rsub (a/timeout (or timeout 30000))])]
+          (dissoc resmsg ::request-id)))))
 
 (defn- safe-call [name f & args]
-  ;;; to prevent go-loop from aborting due to exception in process-fn:
-  (try
-    (apply f args)
-    ;;; TODO: offer default exception handling?
-    (catch Exception e
-      (warn "EXCEPTION (COMPONENT ASYNC" name "):" e))
-    (catch Error e
-      (warn "ERROR (COMPONENT ASYNC" name "):" e))))
+  #?(:clj  (try
+             (apply f args)
+             (catch Exception e
+               (warn "EXCEPTION (COMPONENT ASYNC" name "):" e))
+             (catch Error e
+               (warn "ERROR (COMPONENT ASYNC" name "):" e)))
+     :cljs (try
+             (apply f args)
+             (catch :default e
+               (warn "ERROR (COMPONENT ASYNC" name "):" e)))))
 
 (defn start [{:keys [name in-ch process-fn ctrl-ch deliver-result-fn] :as this}]
   (go-loop [[msg msg-ch] (a/alts! [in-ch ctrl-ch])]

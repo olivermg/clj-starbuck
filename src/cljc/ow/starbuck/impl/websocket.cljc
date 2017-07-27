@@ -17,11 +17,12 @@
            (sente/make-channel-socket! path
                                        {:wrap-recv-evs? false})))
 
-(defn- handle-inbound-sentemsg [{:keys [recv-component] :as this} {:keys [id ?data] :as sentemsg}]
+(defn- handle-inbound-sentemsg [{:keys [recv-fn] :as this} {:keys [id ?data] :as sentemsg}]
   (debug "got inbound message:" id ?data)
   ;;; TODO: add auth checking
   ;;; TODO: maybe add msg shaping
-  (p/deliver recv-component ?data))
+  (case id
+    ::message (recv-fn ?data)))
 
 (defn- start-inbound-msg-handler! [{:keys [senteobjs] :as this}]
   (let [ch-recv (:ch-recv senteobjs)]
@@ -35,14 +36,15 @@
   ;;; TODO: maintain queue of pending msgs, to make sure they are sent in the correct order
   (go-loop [_ nil]
     (let [open? (some-> senteobjs :state .-state :open?)
-          send-fn (:send-fn senteobjs)]
+          send-fn (:send-fn senteobjs)
+          sente-ev [::message msg]]
       (if open?
         (do (debug "sending message to remote:" msg)
-            (send-fn msg))
+            (send-fn sente-ev))
         (do (debug "channel not open yet, delaying:" msg)
             (recur (a/<! (a/timeout 500))))))))
 
-(defrecord ComponentWebsocket [recv-component    ;; server & client
+(defrecord ComponentWebsocket [recv-fn           ;; server & client
                                path              ;; client
                                userid-fn         ;; server
                                senteobjs         ;; start/stop
@@ -51,14 +53,14 @@
   p/Component
 
   (deliver [this msg]
-    (do-send this (update msg :ow.starbuck.routing/component pop))))
+    (do-send this msg)))
 
 ;;; TODO: implement client for server side (not via sente, see factum project):
-#?(:clj  (defn tunnel [recv-component userid-fn]
-           (map->ComponentWebsocket {:recv-component recv-component
+#?(:clj  (defn tunnel [recv-fn userid-fn]
+           (map->ComponentWebsocket {:recv-fn recv-fn
                                      :userid-fn userid-fn}))
-   :cljs (defn tunnel [recv-component path]
-           (map->ComponentWebsocket {:recv-component recv-component
+   :cljs (defn tunnel [recv-fn path]
+           (map->ComponentWebsocket {:recv-fn recv-fn
                                      :path path})))
 
 (defn start [this]

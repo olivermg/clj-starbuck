@@ -2,4 +2,5 @@
   (:refer-clojure :rename {deliver deliver-clj}))
 
 (defprotocol Component
-  (deliver [this msg]))
+  (deliver [this msg])
+  (deliver-sync [this msg]))

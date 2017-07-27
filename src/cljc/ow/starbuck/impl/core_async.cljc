@@ -6,13 +6,26 @@
             [ow.starbuck.protocols :as p]
             [ow.starbuck.routing :as r]))
 
-(defrecord ComponentCoreAsync [name in-ch process-fn deliver-result-fn config
-                               ctrl-ch]
+(defrecord ComponentCoreAsync [name in-ch process-fn deliver-result-fn config ;; mandatory
+                               result-pub timeout ;; optional
+                               ctrl-ch ;; created
+                               ]
 
   p/Component
 
   (deliver [this msg]
-    (a/put! in-ch msg)))
+    (a/put! in-ch msg))
+
+  (deliver-sync [this msg]
+    (let [result-pub (or result-pub
+                         (throw (ex-info "no result-pub given, cannot deliver synchronously"
+                                         {:this this :msg msg})))
+          req-id (rand-int Integer/MAX_VALUE)
+          msg (assoc msg ::request-id req-id)
+          rsub (a/sub result-pub req-id (a/promise-chan))
+          _ (a/put! in-ch msg)
+          [resmsg ch] (a/alts!! [rsub (a/timeout (or timeout 30000))])]
+      (dissoc resmsg ::request-id))))
 
 (defn- safe-call [name f & args]
   ;;; to prevent go-loop from aborting due to exception in process-fn:
@@ -40,12 +53,14 @@
   (a/put! ctrl-ch ::stop)
   this)
 
-(defn- component* [name in-ch process-fn deliver-result-fn & {:keys [config]}]
+(defn- component* [name in-ch process-fn deliver-result-fn & {:keys [config result-pub timeout]}]
   (map->ComponentCoreAsync {:name name
                             :in-ch in-ch
                             :process-fn process-fn
                             :deliver-result-fn deliver-result-fn
                             :config config
+                            :result-pub result-pub
+                            :timeout timeout
                             :ctrl-ch (a/chan)}))
 
 (defn component [name in-ch out-ch process-fn]
@@ -61,7 +76,7 @@
   (component* name in-ch process-fn
               (constantly nil)))
 
-(defn router [config in-ch & {:keys [name]
+(defn router [config in-ch & {:keys [name result-pub timeout]
                               :or {name "router"}}]
   (component* name in-ch
               (fn [{:keys [config] :as this} msg]
@@ -72,7 +87,9 @@
                 (doseq [rm resmsgs]
                   (-> (r/get-next-component config rm)
                       (p/deliver rm))))
-              :config config))
+              :config config
+              :result-pub result-pub
+              :timeout timeout))
 
 (defn tunnel [out-ch & {:keys [name]
                         :or {name "tunnel"}}]
@@ -90,14 +107,3 @@
 
 (defn result-pub [result-ch]
   (a/pub result-ch ::request-id))
-
-(defn process-message [router-ch msg]
-  (a/put! router-ch msg))
-
-(defn process-message-sync [router-ch result-pub msg & {:keys [timeout]}]
-  (let [req-id (rand-int Integer/MAX_VALUE)
-        msg (assoc msg ::request-id req-id)]
-    (a/put! router-ch msg)
-    (let [rsub (a/sub result-pub req-id (a/promise-chan))
-          [resmsg ch] (a/alts!! [rsub (a/timeout (or timeout 20000))])]
-      (dissoc resmsg ::request-id))))

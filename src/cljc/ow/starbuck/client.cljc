@@ -3,7 +3,8 @@
   (:require #?(:clj  [clojure.core.async.impl.protocols :as ap]
                :cljs [cljs.core.async.impl.protocols :as ap])
             #?(:clj  [clojure.core.async :refer [go go-loop] :as a]
-               :cljs [cljs.core.async :as a])))
+               :cljs [cljs.core.async :as a])
+            [ow.starbuck.protocols :as p]))
 
 (defn config [ruleset components & {:keys [unit]}]
   {:unit unit
@@ -111,8 +112,8 @@
                                 output-ch)
             (ica/start)))
 
-      (defn start-async-router [config input-ch result-ch]
-        (-> (ica/router config input-ch :result-ch result-ch :name (str (name (:unit config)) " router"))
+      (defn start-async-router [config input-ch result-pub]
+        (-> (ica/router config input-ch :result-pub result-pub :name (str (name (:unit config)) " router"))
             (ica/start)))
 
       (defn start-async-tunnel [name output-ch]
@@ -134,20 +135,17 @@
       (def browser-config2 (config ruleset1 browser-components2 :unit :browser))
       (def server-config2 (config ruleset1 server-components2 :unit :server))
 
-      (def browser-result-ch (a/chan))
-      (def server-result-ch (a/chan))
-
-      (start-async-router browser-config2 browser-router-ch browser-result-ch)
-      (start-async-router server-config2 server-router-ch server-result-ch))
+      (def browser-router (start-async-router browser-config2 browser-router-ch browser-result-pub))
+      (def server-router  (start-async-router server-config2 server-router-ch server-result-pub)))
 
   (do (->> (message :book-flight {:foo :bar1 :sync false} :max-transitions 20)
-           (ica/process-message browser-router-ch))
+           (p/deliver browser-router))
 
       (->> (message :book-flight {:foo :bar2 :sync false} :max-transitions 20)
-           (ica/process-message browser-router-ch))
+           (p/deliver browser-router))
 
       (->> (message :book-flight {:foo :baz1 :sync true} :max-transitions 20)
-           (ica/process-message-sync browser-router-ch browser-result-pub))
+           (p/deliver-sync browser-router))
       )
 
   )

@@ -17,12 +17,30 @@
            (sente/make-channel-socket! path
                                        {:wrap-recv-evs? false})))
 
+#?(:clj  (defn- do-send* [{:keys [senteobjs] :as this} [_ msg :as sente-ev]]
+           (let [uid :foo  ;; TODO: use real uid
+                 send-fn (:send-fn senteobjs)]
+             (debug "sending message to remote id" uid ":" msg)
+             (send-fn uid sente-ev)))
+
+   :cljs (defn- do-send* [{:keys [senteobjs] :as this} [_ msg :as sente-ev]]
+           (go-loop [[i _] [0 nil]]
+             (if (< i 100)
+               (if (some-> senteobjs :state .-state :open?)
+                 (let [send-fn (:send-fn senteobjs)]
+                   (debug "sending message to remote:" msg "(try" i ")")
+                   (send-fn sente-ev))
+                 (do (debug "channel not open yet, delaying (try" i "):" msg)
+                     (recur [(inc i) (a/<! (a/timeout 500))])))
+               (warn "could not send message after 100 tries, aborting:" msg)))))
+
 (defn- handle-inbound-sentemsg [{:keys [recv-fn] :as this} {:keys [id ?data] :as sentemsg}]
-  (debug "got inbound message:" id ?data)
+  (debug "got message from remote:" id ?data)
   ;;; TODO: add auth checking
   ;;; TODO: maybe add msg shaping
   (case id
-    ::message (recv-fn ?data)))
+    ::message (recv-fn ?data)
+    (warn "unknown message id" id)))
 
 (defn- start-inbound-msg-handler! [{:keys [senteobjs] :as this}]
   (let [ch-recv (:ch-recv senteobjs)]
@@ -32,17 +50,10 @@
           (handle-inbound-sentemsg this sentemsg))
         (recur (a/<! ch-recv))))))
 
-(defn- do-send [{:keys [senteobjs] :as this} msg]
+(defn- do-send [this msg]
   ;;; TODO: maintain queue of pending msgs, to make sure they are sent in the correct order
-  (go-loop [_ nil]
-    (let [open? (some-> senteobjs :state .-state :open?)
-          send-fn (:send-fn senteobjs)
-          sente-ev [::message msg]]
-      (if open?
-        (do (debug "sending message to remote:" msg)
-            (send-fn sente-ev))
-        (do (debug "channel not open yet, delaying:" msg)
-            (recur (a/<! (a/timeout 500))))))))
+  (let [sente-ev [::message (assoc msg :ow.starbuck.routing/tunneled? true)]]
+    (do-send* this sente-ev)))
 
 (defrecord ComponentWebsocket [recv-fn           ;; server & client
                                path              ;; client

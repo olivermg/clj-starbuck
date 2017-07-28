@@ -83,13 +83,13 @@
                               :or {name "router"}}]
   (component* name in-ch
               (fn [{:keys [config] :as this} msg]
-                (if-not (::tunneled? msg)
+                (if-not (:ow.starbuck.routing/tunneled? msg)
                   (r/advance config msg)
-                  [(dissoc msg ::tunneled?)]))
+                  [(dissoc msg :ow.starbuck.routing/tunneled?)]))
               (fn [{:keys [config] :as this} resmsgs]
                 (doseq [rm resmsgs]
-                  (-> (r/get-next-component config rm)
-                      (p/deliver rm))))
+                  (let [nc (r/get-next-component config rm)]
+                    (p/deliver nc rm))))
               :config config
               :result-pub result-pub
               :timeout timeout))
@@ -98,7 +98,7 @@
                         :or {name "tunnel"}}]
   (component* name (a/chan)
               (fn [this msg]
-                (assoc msg ::tunneled? true))
+                (assoc msg :ow.starbuck.routing/tunneled? true))
               (fn [this resmsg]
                 (a/put! out-ch resmsg))))
 

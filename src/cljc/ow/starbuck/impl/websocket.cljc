@@ -10,37 +10,40 @@
 #?(:clj  (defn- make-sente-channel! [{:keys [userid-fn] :as this}]
            (sente/make-channel-socket! (get-sch-adapter)
                                        (merge {}
-                                              (and userid-fn
-                                                   {:user-id-fn userid-fn}))))
+                                              (and userid-fn {:user-id-fn userid-fn}))))
 
    :cljs (defn- make-sente-channel! [{:keys [path] :as this}]
            (sente/make-channel-socket! path
                                        {:wrap-recv-evs? false})))
 
-#?(:clj  (defn- do-send* [{:keys [senteobjs] :as this} [_ msg :as sente-ev]]
-           (let [uid :foo  ;; TODO: use real uid
+#?(:clj  (defn- do-send* [{:keys [senteobjs] :as this} msg]
+           (let [userid (::userid msg)
+                 msg (dissoc msg ::userid)
                  send-fn (:send-fn senteobjs)]
-             (debug "sending message to remote id" uid ":" msg)
-             (send-fn uid sente-ev)))
+             (debug "sending message to remote id" userid ":" msg)
+             (send-fn userid [::message msg])))
 
-   :cljs (defn- do-send* [{:keys [senteobjs] :as this} [_ msg :as sente-ev]]
+   :cljs (defn- do-send* [{:keys [senteobjs] :as this} msg]
            (go-loop [[i _] [0 nil]]
              (if (< i 100)
                (if (some-> senteobjs :state .-state :open?)
                  (let [send-fn (:send-fn senteobjs)]
                    (debug "sending message to remote:" msg "(try" i ")")
-                   (send-fn sente-ev))
+                   (send-fn [::message msg]))
                  (do (debug "channel not open yet, delaying (try" i "):" msg)
                      (recur [(inc i) (a/<! (a/timeout 500))])))
                (warn "could not send message after 100 tries, aborting:" msg)))))
 
-(defn- handle-inbound-sentemsg [{:keys [recv-fn] :as this} {:keys [id ?data] :as sentemsg}]
-  (debug "got message from remote:" id ?data)
-  ;;; TODO: add auth checking
-  ;;; TODO: maybe add msg shaping
-  (case id
-    ::message (recv-fn ?data)
-    (warn "unknown message id" id)))
+(defn- handle-inbound-sentemsg [{:keys [recv-fn userid-fn] :as this} {:keys [id ?data ring-req] :as sentemsg}]
+  (let [userid (and userid-fn (userid-fn ring-req))
+        ?data (merge ?data
+                     (and userid {::userid userid}))]
+    (debug "got message from remote:" id ?data)
+    ;;; TODO: add auth checking
+    ;;; TODO: maybe add msg shaping
+    (case id
+      ::message (recv-fn ?data)
+      (warn "unknown message id" id))))
 
 (defn- start-inbound-msg-handler! [{:keys [senteobjs] :as this}]
   (let [ch-recv (:ch-recv senteobjs)]
@@ -52,8 +55,8 @@
 
 (defn- do-send [this msg]
   ;;; TODO: maintain queue of pending msgs, to make sure they are sent in the correct order
-  (let [sente-ev [::message (assoc msg :ow.starbuck.routing/tunneled? true)]]
-    (do-send* this sente-ev)))
+  (let [msg (assoc msg :ow.starbuck.routing/tunneled? true)]
+    (do-send* this msg)))
 
 (defrecord ComponentWebsocket [recv-fn           ;; server & client
                                path              ;; client

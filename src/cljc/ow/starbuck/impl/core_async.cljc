@@ -46,7 +46,7 @@
                   (and (= msg-ch ctrl-ch)
                        (= msg ::stop)))
       (debug name "got message:" msg #_(r/printable-msg msg))
-      (some->> (safe-call name process-fn this msg)
+      (some->> (safe-call name process-fn this msg) ;; TODO: add some error handling (to inform clients about error)
                (deliver-result-fn this))
       (debug name "delivered result")
       (recur (a/alts! [in-ch ctrl-ch]))))

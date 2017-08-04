@@ -16,9 +16,9 @@
            (sente/make-channel-socket! path
                                        {:wrap-recv-evs? false})))
 
-#?(:clj  (defn- do-send* [{:keys [senteobjs] :as this} msg]
-           (let [userid (::userid msg)
-                 msg (dissoc msg ::userid)
+#?(:clj  (defn- do-send* [{:keys [senteobjs userid-kw] :as this} msg]
+           (let [userid (get msg userid-kw)
+                 msg (dissoc msg userid-kw)
                  send-fn (:send-fn senteobjs)]
              (debug "sending message to remote id" userid ":" msg)
              (send-fn userid [::message msg])))
@@ -34,10 +34,11 @@
                      (recur [(inc i) (a/<! (a/timeout 500))])))
                (warn "could not send message after 100 tries, aborting:" msg)))))
 
-(defn- handle-inbound-sentemsg [{:keys [recv-fn userid-fn] :as this} {:keys [id ?data ring-req] :as sentemsg}]
+(defn- handle-inbound-sentemsg [{:keys [recv-fn userid-fn userid-kw] :as this}
+                                {:keys [id ?data ring-req] :as sentemsg}]
   (let [userid (and userid-fn (userid-fn ring-req))
         ?data (merge ?data
-                     (and userid {::userid userid}))]
+                     (and userid {userid-kw userid}))]
     (debug "got message from remote:" id ?data)
     ;;; TODO: add auth checking
     ;;; TODO: maybe add msg shaping
@@ -70,9 +71,10 @@
     (do-send this msg)))
 
 ;;; TODO: implement client for server side (not via sente, see factum project):
-#?(:clj  (defn tunnel [recv-fn userid-fn]
+#?(:clj  (defn tunnel [recv-fn userid-fn & {:keys [userid-kw]}]
            (map->ComponentWebsocket {:recv-fn recv-fn
-                                     :userid-fn userid-fn}))
+                                     :userid-fn userid-fn
+                                     :userid-kw (or userid-kw ::userid)}))
    :cljs (defn tunnel [recv-fn path]
            (map->ComponentWebsocket {:recv-fn recv-fn
                                      :path path})))

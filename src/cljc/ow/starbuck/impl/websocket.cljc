@@ -59,16 +59,23 @@
   (let [msg (assoc msg :ow.starbuck.routing/tunneled? true)]
     (do-send* this msg)))
 
-(defrecord ComponentWebsocket [recv-fn           ;; server & client
-                               path              ;; client
-                               userid-fn         ;; server
-                               senteobjs         ;; start/stop
-                               ]
+(defrecord ComponentWebsocket #?(:clj  [recv-fn           ;; fn to call for incoming msg
+                                        userid-fn         ;; fn that gets userid from ring request
+                                        userid-kw         ;; kw that userid will be assocd to in msg
+                                        senteobjs         ;; is being set on start
+                                        ]
+                                 :cljs [recv-fn           ;; fn to call for incoming msg
+                                        path              ;; path to server
+                                        senteobjs         ;; is being set on start
+                                        ])
 
   p/Component
 
   (deliver [this msg]
-    (do-send this msg)))
+    (do-send this msg))
+
+  (deliver-sync [this msg]
+    (throw (ex-info "not implemented" {}))))
 
 ;;; TODO: implement client for server side (not via sente, see factum project):
 #?(:clj  (defn tunnel [recv-fn userid-fn & {:keys [userid-kw]}]

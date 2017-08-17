@@ -20,6 +20,16 @@
          :ow.starbuck.routing/transition-count 0
          :ow.starbuck.routing/max-transitions max-transitions))
 
+(defn route [msg]
+  (:ow.starbuck.routing/route msg))
+
+(defn clean-message [msg]
+  (dissoc msg
+          :ow.starbuck.routing/route
+          :ow.starbuck.routing/component
+          :ow.starbuck.routing/transition-count
+          :ow.starbuck.routing/max-transitions))
+
 
 
 (comment

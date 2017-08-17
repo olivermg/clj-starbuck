@@ -69,7 +69,8 @@
 (defn component [name in-ch out-ch process-fn]
   (component* name in-ch process-fn
               (fn [this resmsg]
-                (a/put! out-ch resmsg))))
+                (when out-ch
+                  (a/put! out-ch resmsg)))))
 
 (defn echo-component [name in-ch out-ch]
   (component name in-ch out-ch
